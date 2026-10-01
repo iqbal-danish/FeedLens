@@ -20,12 +20,32 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let icon_bytes = include_bytes!("../icons/128x128.png");
+                if let Ok(icon) = tauri::image::Image::from_bytes(icon_bytes) {
+                    let _ = window.set_icon(icon);
+                }
+            }
+            Ok(())
+        })
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Ensure immediate clean exit of all background threads and webview sub-processes
+                std::process::exit(0);
+            }
+        })
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::pick_feed_file,
             commands::pick_export_file,
             commands::start_ingestion,
             commands::cancel_ingestion,
+            commands::get_recent_feeds,
+            commands::delete_recent_feed,
+            commands::load_recent_feed,
+            commands::export_column_frequency,
             commands::get_overview_stats,
             commands::get_completeness_matrix,
             commands::get_column_distribution,

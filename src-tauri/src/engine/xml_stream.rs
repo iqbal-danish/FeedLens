@@ -186,10 +186,11 @@ pub struct XmlStreamParser<R: BufRead> {
     reader: Reader<R>,
     buf: Vec<u8>,
     target_tag_lower: String,
+    skip_descriptions: bool,
 }
 
 impl<R: BufRead> XmlStreamParser<R> {
-    pub fn new(read: R, target_tag: &str) -> Self {
+    pub fn new(read: R, target_tag: &str, skip_descriptions: bool) -> Self {
         let mut reader = Reader::from_reader(read);
         reader.config_mut().trim_text(true);
         reader.config_mut().expand_empty_elements = false;
@@ -198,6 +199,7 @@ impl<R: BufRead> XmlStreamParser<R> {
             reader,
             buf: Vec::with_capacity(8192),
             target_tag_lower: target_tag.to_lowercase(),
+            skip_descriptions,
         }
     }
 
@@ -259,6 +261,23 @@ impl<R: BufRead> XmlStreamParser<R> {
                 Ok(Event::Start(ref e)) => {
                     let raw_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
                     let sub_name = strip_namespace(&raw_name).to_string();
+                    let sub_lower = sub_name.to_lowercase();
+
+                    if self.skip_descriptions && (sub_lower.contains("description") || sub_lower == "body" || sub_lower == "content") {
+                        let mut desc_depth = 1;
+                        let mut skip_buf = Vec::with_capacity(512);
+                        while desc_depth > 0 {
+                            skip_buf.clear();
+                            match self.reader.read_event_into(&mut skip_buf) {
+                                Ok(Event::Start(_)) => desc_depth += 1,
+                                Ok(Event::End(_)) => desc_depth -= 1,
+                                Ok(Event::Eof) => break,
+                                _ => {}
+                            }
+                        }
+                        continue;
+                    }
+
                     tag_stack.push(sub_name);
                     current_text.clear();
 

@@ -8,15 +8,21 @@ import type {
   ValueFrequency,
   DuplicateEntry,
   QueryResultPage,
+  RecentFeed,
 } from "./types";
 
 export class FeedLensState {
   currentFile = $state<SelectedFileInfo | null>(null);
   progress = $state<IngestionProgress | null>(null);
   isIngesting = $state(false);
+  hasActiveDataset = $state(false);
   stats = $state<OverviewStats | null>(null);
   completeness = $state<ColumnCompleteness[]>([]);
   activeTab = $state<"overview" | "completeness" | "explorer" | "deepdive">("overview");
+
+  // Recent Analyzed Feeds
+  recentFeeds = $state<RecentFeed[]>([]);
+  isLoadingRecent = $state(false);
 
   // Deep dive selection
   selectedColumn = $state<string>("");
@@ -36,11 +42,17 @@ export class FeedLensState {
   // Inspector modal
   inspectingRecord = $state<Record<string, string | null> | null>(null);
 
-  // Status notification
+  // Status notification & errors
   toastMessage = $state<string | null>(null);
+  lastError = $state<string | null>(null);
 
   constructor() {
     this.setupListeners();
+    this.fetchRecentFeeds();
+  }
+
+  clearError() {
+    this.lastError = null;
   }
 
   showToast(msg: string) {
@@ -49,42 +61,124 @@ export class FeedLensState {
       if (this.toastMessage === msg) {
         this.toastMessage = null;
       }
-    }, 4000);
+    }, 5000);
   }
 
   async setupListeners() {
     await listen<IngestionProgress>("ingest-progress", (event) => {
       this.progress = event.payload;
-      if (event.payload.status === "indexing") {
-        this.isIngesting = true;
+      if (event.payload.status === "ready" || event.payload.status === "cancelled" || event.payload.status === "error") {
+        this.isIngesting = false;
+      } else if (event.payload.status === "indexing") {
+        if (!this.stats && this.isIngesting) {
+          this.hasActiveDataset = true;
+        }
       }
     });
 
     await listen("ingest-complete", async () => {
       this.isIngesting = false;
+      if (this.progress) {
+        this.progress.status = "ready";
+        this.progress.percentage = 100.0;
+      }
+      this.lastError = null;
       this.showToast("Feed successfully indexed into DuckDB!");
       await this.refreshAllData();
+      await this.fetchRecentFeeds();
+      this.isIngesting = false;
+      this.hasActiveDataset = true;
+      this.activeTab = "overview";
     });
 
     await listen<string>("ingest-error", (event) => {
       this.isIngesting = false;
+      this.lastError = event.payload;
+      if (!this.stats) {
+        this.hasActiveDataset = false;
+      }
       this.showToast(`Error: ${event.payload}`);
     });
   }
 
-  async openFile() {
+  async fetchRecentFeeds() {
+    this.isLoadingRecent = true;
     try {
-      const file = await invoke<SelectedFileInfo | null>("pick_feed_file");
-      if (file) {
-        this.currentFile = file;
-        await this.startIngest(file.path);
-      }
+      this.recentFeeds = await invoke<RecentFeed[]>("get_recent_feeds");
     } catch (e: any) {
-      this.showToast(`Failed to open file: ${e.message || e}`);
+      console.warn("Could not fetch recent feeds:", e);
+    } finally {
+      this.isLoadingRecent = false;
     }
   }
 
-  async startIngest(filePath: string) {
+  async loadRecentFeed(feed: RecentFeed) {
+    try {
+      this.showToast(`Loading ${feed.filename}...`);
+      const stats = await invoke<OverviewStats>("load_recent_feed", { taskId: feed.id });
+      this.stats = stats;
+      this.hasActiveDataset = true;
+      this.currentFile = {
+        path: feed.db_path,
+        filename: feed.filename,
+        size_bytes: 0,
+        format: feed.filename.endsWith(".json") ? "JSON" : "XML",
+      };
+      await this.refreshAllData();
+      this.activeTab = "overview";
+      this.showToast(`Loaded ${feed.filename} instantly!`);
+    } catch (e: any) {
+      this.showToast(`Failed to load feed: ${e.message || e}`);
+    }
+  }
+
+  async deleteRecentFeed(feedId: string) {
+    try {
+      await invoke("delete_recent_feed", { taskId: feedId });
+      this.recentFeeds = this.recentFeeds.filter((f) => f.id !== feedId);
+      this.showToast("Deleted feed entry.");
+    } catch (e: any) {
+      this.showToast(`Failed to delete: ${e.message || e}`);
+    }
+  }
+
+  resetToLanding() {
+    this.hasActiveDataset = false;
+    this.currentFile = null;
+    this.stats = null;
+    this.completeness = [];
+    this.tableData = null;
+    this.columnDistribution = [];
+    this.duplicateEntries = [];
+    this.fetchRecentFeeds();
+  }
+
+  async pickFeedFile(): Promise<SelectedFileInfo | null> {
+    try {
+      const file = await invoke<SelectedFileInfo | null>("pick_feed_file");
+      return file;
+    } catch (e: any) {
+      this.showToast(`Failed to pick file: ${e.message || e}`);
+      return null;
+    }
+  }
+
+  async openFile() {
+    const file = await this.pickFeedFile();
+    if (file) {
+      this.currentFile = file;
+      await this.startIngest("file", file.path, null, "extreme");
+    }
+  }
+
+  async startIngest(
+    sourceType: "file" | "url",
+    filePath: string,
+    recordTag: string | null = null,
+    ingestionMode: string = "extreme"
+  ) {
+    this.lastError = null;
+    this.hasActiveDataset = true;
     this.isIngesting = true;
     this.stats = null;
     this.completeness = [];
@@ -94,7 +188,12 @@ export class FeedLensState {
     this.currentPage = 1;
 
     try {
-      await invoke("start_ingestion", { filePath, recordTag: null });
+      await invoke("start_ingestion", {
+        sourceType,
+        filePath,
+        recordTag: recordTag && recordTag !== "Auto" && recordTag.trim() !== "" ? recordTag.trim() : null,
+        ingestionMode,
+      });
     } catch (e: any) {
       this.isIngesting = false;
       this.showToast(`Ingestion failed: ${e.message || e}`);
@@ -210,6 +309,24 @@ export class FeedLensState {
       }
     } catch (e: any) {
       this.showToast(`Export failed: ${e.message || e}`);
+    }
+  }
+
+  async exportColumnFrequency(columnName: string) {
+    try {
+      const cleanCol = columnName.replace(/[^a-zA-Z0-9_]/g, "_");
+      const defaultName = `${cleanCol}_frequency_${Date.now()}.csv`;
+      const path = await invoke<string | null>("pick_export_file", { defaultName, isJson: false });
+      if (path) {
+        this.showToast(`Exporting frequency for ${columnName}...`);
+        const count = await invoke<number>("export_column_frequency", {
+          columnName,
+          exportPath: path,
+        });
+        this.showToast(`Exported ${count.toLocaleString()} unique values to CSV!`);
+      }
+    } catch (e: any) {
+      this.showToast(`Frequency export failed: ${e.message || e}`);
     }
   }
 }

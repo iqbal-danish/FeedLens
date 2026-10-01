@@ -44,7 +44,7 @@
         formatter: (params: any) => {
           const item = params[0];
           return `<div class="font-sans text-xs">
-            <span class="font-bold text-cyan-400">${item.name}</span>: ${item.value}% fill rate
+            <span class="font-bold text-blue-400">${item.name}</span>: ${item.value}% fill rate
           </div>`;
         },
       },
@@ -74,7 +74,7 @@
           data: fillRates.map((val) => ({
             value: val,
             itemStyle: {
-              color: val >= 95 ? "#10b981" : val >= 80 ? "#f59e0b" : "#ef4444",
+              color: val >= 95 ? "#3b82f6" : val >= 80 ? "#6366f1" : "#64748b",
               borderRadius: [0, 4, 4, 0],
             },
           })),
@@ -115,7 +115,7 @@
     <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800 shadow-sm relative overflow-hidden">
       <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
         <span>Total Records</span>
-        <Database class="w-4 h-4 text-cyan-400" />
+        <Database class="w-4 h-4 text-blue-400" />
       </div>
       <div class="text-2xl font-black text-white font-mono">
         {feedState.stats?.total_records.toLocaleString() || "0"}
@@ -139,9 +139,9 @@
     <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800 shadow-sm relative overflow-hidden">
       <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
         <span>Average Fill Rate</span>
-        <CheckCircle2 class="w-4 h-4 text-emerald-400" />
+        <CheckCircle2 class="w-4 h-4 text-blue-400" />
       </div>
-      <div class="text-2xl font-black text-emerald-400 font-mono">
+      <div class="text-2xl font-black text-blue-400 font-mono">
         {averageFillRate().toFixed(1)}%
       </div>
       <p class="text-[11px] text-slate-400 mt-1">Completeness across all fields</p>
@@ -151,9 +151,9 @@
     <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800 shadow-sm relative overflow-hidden">
       <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">
         <span>Throughput</span>
-        <Zap class="w-4 h-4 text-amber-400" />
+        <Zap class="w-4 h-4 text-slate-400" />
       </div>
-      <div class="text-2xl font-black text-amber-400 font-mono">
+      <div class="text-2xl font-black text-slate-200 font-mono">
         {Math.round(feedState.stats?.records_per_sec || 0).toLocaleString()} <span class="text-xs font-normal text-slate-400">rec/s</span>
       </div>
       <p class="text-[11px] text-slate-400 mt-1">
@@ -173,7 +173,7 @@
         </div>
         <button
           onclick={() => (feedState.activeTab = "completeness")}
-          class="flex items-center gap-1 text-xs text-cyan-400 hover:text-cyan-300 font-medium cursor-pointer"
+          class="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 font-medium cursor-pointer"
         >
           <span>View Matrix Table</span>
           <ArrowRight class="w-3.5 h-3.5" />
@@ -188,7 +188,7 @@
       <!-- 100% Populated Attributes -->
       <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800 shadow-sm">
         <div class="flex items-center gap-2 mb-3">
-          <CheckCircle2 class="w-4 h-4 text-emerald-400" />
+          <CheckCircle2 class="w-4 h-4 text-blue-400" />
           <h4 class="text-xs font-bold text-white uppercase tracking-wider">
             100% Complete ({fullyPopulatedCols().length})
           </h4>
@@ -200,7 +200,7 @@
                 feedState.fetchDeepDive(col.column_name);
                 feedState.activeTab = "deepdive";
               }}
-              class="px-2 py-1 rounded bg-emerald-950/40 border border-emerald-800/40 text-emerald-300 text-xs font-mono hover:bg-emerald-900/50 transition cursor-pointer"
+              class="px-2 py-1 rounded bg-blue-950/40 border border-blue-800/40 text-blue-300 text-xs font-mono hover:bg-blue-900/50 transition cursor-pointer"
             >
               {col.original_name}
             </button>
@@ -211,7 +211,7 @@
       <!-- Attributes with Missing Values -->
       <div class="p-4 rounded-xl bg-slate-900/70 border border-slate-800 shadow-sm">
         <div class="flex items-center gap-2 mb-3">
-          <AlertTriangle class="w-4 h-4 text-amber-400" />
+          <AlertTriangle class="w-4 h-4 text-slate-400" />
           <h4 class="text-xs font-bold text-white uppercase tracking-wider">
             Incomplete Fields ({lowFillCols().length})
           </h4>
@@ -229,7 +229,7 @@
                 class="w-full flex items-center justify-between p-2 rounded bg-slate-800/60 hover:bg-slate-800 border border-slate-700/50 text-left transition cursor-pointer"
               >
                 <span class="text-xs font-mono text-slate-200 truncate">{col.original_name}</span>
-                <span class="text-xs font-bold font-mono text-amber-400 ml-2">{col.fill_rate.toFixed(1)}%</span>
+                <span class="text-xs font-bold font-mono text-slate-300 ml-2">{col.fill_rate.toFixed(1)}%</span>
               </button>
             {/each}
           {/if}

@@ -49,7 +49,7 @@
         type="text"
         placeholder="Filter attributes..."
         bind:value={searchFilter}
-        class="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition"
+        class="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
       />
     </div>
 
@@ -59,12 +59,12 @@
   </div>
 
   <!-- Matrix Table Container -->
-  <div class="flex-1 bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden shadow-sm flex flex-col">
-    <div class="overflow-x-auto overflow-y-auto flex-1">
+  <div class="flex-1 bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden flex flex-col">
+    <div class="overflow-x-auto overflow-y-auto flex-1 isolate">
       <table class="w-full text-left text-xs border-collapse">
-        <thead class="bg-slate-950/80 sticky top-0 z-10 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-          <tr>
-            <th class="py-3 px-4 cursor-pointer hover:text-white" onclick={() => toggleSort("name")}>
+        <thead class="bg-slate-950 sticky top-0 z-10 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+          <tr class="bg-slate-950">
+            <th class="py-3 px-4 bg-slate-950 cursor-pointer hover:text-white" onclick={() => toggleSort("name")}>
               <div class="flex items-center gap-1.5">
                 <span>Attribute</span>
                 <ArrowUpDown class="w-3 h-3 text-slate-500" />
@@ -93,7 +93,7 @@
             <tr class="hover:bg-slate-800/40 transition">
               <!-- Name -->
               <td class="py-3 px-4 font-semibold text-white">
-                <span class="font-mono text-cyan-300">{col.original_name}</span>
+                <span class="font-mono text-blue-300">{col.original_name}</span>
               </td>
 
               <!-- Fill Rate -->
@@ -101,11 +101,11 @@
                 <div class="flex items-center justify-end gap-2">
                   <div class="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden hidden sm:block">
                     <div
-                      class="h-full rounded-full {col.fill_rate >= 95 ? 'bg-emerald-400' : col.fill_rate >= 80 ? 'bg-amber-400' : 'bg-red-400'}"
+                      class="h-full rounded-full {col.fill_rate >= 95 ? 'bg-blue-500' : col.fill_rate >= 80 ? 'bg-indigo-500' : 'bg-slate-600'}"
                       style="width: {col.fill_rate}%"
                     ></div>
                   </div>
-                  <span class="font-bold {col.fill_rate >= 95 ? 'text-emerald-400' : col.fill_rate >= 80 ? 'text-amber-400' : 'text-red-400'}">
+                  <span class="font-bold {col.fill_rate >= 95 ? 'text-blue-400' : col.fill_rate >= 80 ? 'text-indigo-400' : 'text-slate-400'}">
                     {col.fill_rate.toFixed(1)}%
                   </span>
                 </div>
@@ -119,7 +119,7 @@
               <!-- Missing -->
               <td class="py-3 px-4 text-right">
                 {#if col.empty_count > 0}
-                  <span class="text-amber-400 font-medium">{col.empty_count.toLocaleString()}</span>
+                  <span class="text-slate-400 font-medium">{col.empty_count.toLocaleString()}</span>
                 {:else}
                   <span class="text-slate-600">0</span>
                 {/if}
@@ -148,7 +148,7 @@
                     feedState.fetchDeepDive(col.column_name);
                     feedState.activeTab = "deepdive";
                   }}
-                  class="p-1.5 rounded-lg bg-slate-800 hover:bg-cyan-950/60 text-slate-400 hover:text-cyan-400 border border-slate-700 hover:border-cyan-800 transition cursor-pointer"
+                  class="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-950/60 text-slate-400 hover:text-blue-400 border border-slate-700 hover:border-blue-800 transition cursor-pointer"
                   title="Inspect Value Distribution"
                 >
                   <BarChart2 class="w-3.5 h-3.5" />

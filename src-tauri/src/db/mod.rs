@@ -55,17 +55,21 @@ pub struct DuckDbManager {
     conn: Arc<Mutex<Connection>>,
     known_columns: Arc<Mutex<Vec<String>>>,
     column_mapping: Arc<Mutex<HashMap<String, String>>>, // sanitized -> original
+    known_raw_keys: Arc<Mutex<HashSet<String>>>,          // fast set of all seen raw un-sanitized keys
+    cached_query_keys: Arc<Mutex<Vec<String>>>,           // pre-mapped original keys in column order for O(1) appender
 }
 
 impl DuckDbManager {
     pub fn new() -> Result<Self> {
         let _ = std::fs::create_dir_all(".duckdb_temp");
         let conn = Connection::open_in_memory()?;
-        // Optimize DuckDB vector engine for peak throughput
+        // Optimize DuckDB vector engine for peak uninterrupted throughput
         conn.execute_batch(
             "PRAGMA preserve_insertion_order = false;
              PRAGMA threads = 8;
              PRAGMA memory_limit = '6GB';
+             PRAGMA checkpoint_threshold = '10GB';
+             PRAGMA wal_autocheckpoint = '10GB';
              PRAGMA temp_directory = '.duckdb_temp';",
         )?;
 
@@ -73,6 +77,8 @@ impl DuckDbManager {
             conn: Arc::new(Mutex::new(conn)),
             known_columns: Arc::new(Mutex::new(Vec::new())),
             column_mapping: Arc::new(Mutex::new(HashMap::new())),
+            known_raw_keys: Arc::new(Mutex::new(HashSet::new())),
+            cached_query_keys: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -101,7 +107,11 @@ impl DuckDbManager {
         let mut mapping = self.column_mapping.lock();
         mapping.clear();
 
+        let mut raw_keys = self.known_raw_keys.lock();
+        raw_keys.clear();
+
         for col in initial_columns {
+            raw_keys.insert(col.clone());
             let sanitized = Self::sanitize_column_name(col);
             if !sanitized_cols.contains(&sanitized) {
                 mapping.insert(sanitized.clone(), col.clone());
@@ -112,6 +122,7 @@ impl DuckDbManager {
         if sanitized_cols.is_empty() {
             sanitized_cols.push("id".to_string());
             mapping.insert("id".to_string(), "id".to_string());
+            raw_keys.insert("id".to_string());
         }
 
         let col_defs = sanitized_cols
@@ -123,6 +134,9 @@ impl DuckDbManager {
         let sql = format!("CREATE TABLE feed_records ({});", col_defs);
         conn.execute_batch(&sql)?;
 
+        let mut cached = self.cached_query_keys.lock();
+        *cached = sanitized_cols.iter().map(|c| mapping.get(c).cloned().unwrap_or_else(|| c.clone())).collect();
+
         let mut known = self.known_columns.lock();
         *known = sanitized_cols;
         Ok(())
@@ -132,48 +146,62 @@ impl DuckDbManager {
     pub fn ensure_columns(&self, columns: &[String]) -> Result<()> {
         let mut known = self.known_columns.lock();
         let mut mapping = self.column_mapping.lock();
+        let mut raw_keys = self.known_raw_keys.lock();
         let conn = self.conn.lock();
+        let mut altered = false;
 
         for col in columns {
+            raw_keys.insert(col.clone());
             let sanitized = Self::sanitize_column_name(col);
             if !known.contains(&sanitized) {
                 let sql = format!("ALTER TABLE feed_records ADD COLUMN \"{}\" VARCHAR;", sanitized);
                 if conn.execute_batch(&sql).is_ok() {
                     mapping.insert(sanitized.clone(), col.clone());
                     known.push(sanitized);
+                    altered = true;
                 }
             }
         }
+
+        if altered {
+            let mut cached = self.cached_query_keys.lock();
+            *cached = known.iter().map(|c| mapping.get(c).cloned().unwrap_or_else(|| c.clone())).collect();
+        }
+
         Ok(())
     }
 
-    /// Batch insert records using DuckDB Appender for peak performance
+    /// Batch insert records using DuckDB Appender for peak uninterrupted performance
     pub fn insert_batch(&self, records: &[HashMap<String, String>]) -> Result<()> {
         if records.is_empty() {
             return Ok(());
         }
 
-        // Collect any new columns present in this batch
-        let mut new_cols = HashSet::new();
-        for rec in records {
-            for k in rec.keys() {
-                new_cols.insert(k.clone());
+        // Fast zero-allocation check: check if any unknown keys exist in this batch
+        let mut new_keys = Vec::new();
+        {
+            let raw_keys = self.known_raw_keys.lock();
+            for rec in records {
+                for k in rec.keys() {
+                    if !raw_keys.contains(k) {
+                        new_keys.push(k.clone());
+                    }
+                }
             }
         }
-        let cols_vec: Vec<String> = new_cols.into_iter().collect();
-        self.ensure_columns(&cols_vec)?;
 
-        let current_columns = self.known_columns.lock().clone();
-        let mapping = self.column_mapping.lock().clone();
+        if !new_keys.is_empty() {
+            self.ensure_columns(&new_keys)?;
+        }
+
+        let cached_keys = self.cached_query_keys.lock().clone();
         let conn = self.conn.lock();
 
         let mut appender = conn.appender("feed_records")?;
         for rec in records {
-            let mut row_slice: Vec<Option<&str>> = Vec::with_capacity(current_columns.len());
-            for col in &current_columns {
-                let original_key = mapping.get(col).unwrap_or(col);
-                let val = rec.get(original_key).map(|s| s.as_str());
-                row_slice.push(val);
+            let mut row_slice: Vec<Option<&str>> = Vec::with_capacity(cached_keys.len());
+            for orig_key in &cached_keys {
+                row_slice.push(rec.get(orig_key).map(|s| s.as_str()));
             }
             appender.append_row(duckdb::appender_params_from_iter(row_slice.into_iter()))?;
         }
@@ -466,4 +494,150 @@ impl DuckDbManager {
         let count: u64 = stmt.query_row([], |row| row.get(0))?;
         Ok(count)
     }
+
+    /// Export frequency breakdown of a single column to CSV
+    pub fn export_column_frequency(&self, col_name: &str, export_path: &str) -> Result<u64> {
+        let sanitized = Self::sanitize_column_name(col_name);
+        let conn = self.conn.lock();
+        let clean_path = export_path.replace('\\', "/").replace('\'', "''");
+
+        let copy_sql = format!(
+            "COPY (
+                WITH stats AS (
+                    SELECT COUNT(*) as total_count FROM feed_records
+                ),
+                freq AS (
+                    SELECT 
+                        COALESCE(CAST(\"{}\" AS VARCHAR), '[NULL / EMPTY]') as \"{}\",
+                        COUNT(*) as count,
+                        ROUND(COUNT(*) * 100.0 / (SELECT total_count FROM stats), 2) as percentage
+                    FROM feed_records
+                    GROUP BY \"{}\"
+                    ORDER BY count DESC
+                )
+                SELECT * FROM freq
+            ) TO '{}' (HEADER, DELIMITER ',');",
+            sanitized, col_name.replace('"', "\"\""), sanitized, clean_path
+        );
+        conn.execute_batch(&copy_sql)?;
+
+        let mut stmt = conn.prepare(&format!("SELECT COUNT(DISTINCT \"{}\") FROM feed_records;", sanitized))?;
+        let count: u64 = stmt.query_row([], |row| row.get(0)).unwrap_or(0);
+        Ok(count)
+    }
+
+    /// Persist current in-memory feed_records table to a standalone .duckdb file
+    pub fn persist_to_file(&self, db_file_path: &str) -> Result<()> {
+        let conn = self.conn.lock();
+        let clean_path = db_file_path.replace('\\', "/").replace('\'', "''");
+        let _ = std::fs::remove_file(db_file_path);
+
+        let sql = format!(
+            "ATTACH '{}' AS disk_db;
+             CREATE TABLE disk_db.feed_records AS SELECT * FROM feed_records;
+             DETACH disk_db;",
+            clean_path
+        );
+        conn.execute_batch(&sql)?;
+        Ok(())
+    }
+
+    /// Load feed_records table from an existing .duckdb file into memory
+    pub fn load_from_db(&self, db_file_path: &str) -> Result<OverviewStats> {
+        let conn = self.conn.lock();
+        let clean_path = db_file_path.replace('\\', "/").replace('\'', "''");
+
+        let sql = format!(
+            "DROP TABLE IF EXISTS feed_records;
+             ATTACH '{}' AS disk_db (READ_ONLY);
+             CREATE TABLE feed_records AS SELECT * FROM disk_db.feed_records;
+             DETACH disk_db;",
+            clean_path
+        );
+        conn.execute_batch(&sql)?;
+
+        // Discover columns
+        let mut pragma_stmt = conn.prepare("PRAGMA table_info('feed_records');")?;
+        let col_names = pragma_stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<String>, _>>()?;
+
+        let mut known = self.known_columns.lock();
+        *known = col_names.clone();
+
+        let mut mapping = self.column_mapping.lock();
+        mapping.clear();
+        for c in &col_names {
+            mapping.insert(c.clone(), c.clone());
+        }
+
+        // Count total records
+        let mut count_stmt = conn.prepare("SELECT COUNT(*) FROM feed_records;")?;
+        let total: u64 = count_stmt.query_row([], |row| row.get(0))?;
+
+        Ok(OverviewStats {
+            total_records: total,
+            column_count: col_names.len(),
+            columns: col_names,
+            elapsed_secs: 0.05,
+            records_per_sec: 0.0,
+            memory_usage_mb: 25.0,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentFeed {
+    pub id: String,
+    pub filename: String,
+    pub source_type: String, // "file" or "url"
+    pub file_size: String,
+    pub total_records: u64,
+    pub column_count: usize,
+    pub db_path: String,
+    pub analyzed_at: String,
+}
+
+pub fn get_feedlens_data_dir() -> std::path::PathBuf {
+    let dir = std::path::PathBuf::from(".feedlens_data");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+pub fn get_recent_catalog_path() -> std::path::PathBuf {
+    get_feedlens_data_dir().join("recent_catalog.json")
+}
+
+pub fn load_recent_catalog() -> Vec<RecentFeed> {
+    let path = get_recent_catalog_path();
+    if let Ok(bytes) = std::fs::read(&path) {
+        if let Ok(feeds) = serde_json::from_slice::<Vec<RecentFeed>>(&bytes) {
+            return feeds;
+        }
+    }
+    Vec::new()
+}
+
+pub fn save_recent_feed_entry(feed: RecentFeed) -> Result<()> {
+    let mut catalog = load_recent_catalog();
+    catalog.retain(|f| f.id != feed.id && f.db_path != feed.db_path);
+    catalog.insert(0, feed);
+    if catalog.len() > 30 {
+        catalog.truncate(30);
+    }
+    let data = serde_json::to_vec_pretty(&catalog)?;
+    std::fs::write(get_recent_catalog_path(), data)?;
+    Ok(())
+}
+
+pub fn delete_recent_feed_entry(id: &str) -> Result<()> {
+    let mut catalog = load_recent_catalog();
+    if let Some(pos) = catalog.iter().position(|f| f.id == id) {
+        let feed = catalog.remove(pos);
+        let _ = std::fs::remove_file(&feed.db_path);
+        let _ = std::fs::remove_file(format!("{}.wal", feed.db_path));
+    }
+    let data = serde_json::to_vec_pretty(&catalog)?;
+    std::fs::write(get_recent_catalog_path(), data)?;
+    Ok(())
 }

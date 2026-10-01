@@ -34,7 +34,7 @@
       <div class="p-6 overflow-y-auto divide-y divide-slate-800/60 font-mono text-xs">
         {#each Object.entries(feedState.inspectingRecord) as [key, value]}
           <div class="py-2.5 flex items-start justify-between gap-4 group">
-            <span class="text-cyan-400 font-semibold shrink-0 min-w-[140px]">{key}</span>
+            <span class="text-blue-400 font-semibold shrink-0 min-w-[140px]">{key}</span>
             <div class="flex-1 text-slate-200 break-all">
               {#if value === null || value === undefined || value.trim() === ""}
                 <span class="text-slate-600 italic">[EMPTY / NULL]</span>
@@ -49,7 +49,7 @@
                 title="Copy value"
               >
                 {#if copiedKey === key}
-                  <Check class="w-3.5 h-3.5 text-emerald-400" />
+                  <Check class="w-3.5 h-3.5 text-blue-400" />
                 {:else}
                   <Copy class="w-3.5 h-3.5" />
                 {/if}

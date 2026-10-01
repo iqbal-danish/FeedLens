@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, BufReader, Read, Seek, SeekFrom};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
@@ -105,5 +105,86 @@ pub fn open_streaming_reader<P: AsRef<Path>>(
             }
             anyhow::bail!("No XML or JSON entry found inside tar.gz archive")
         }
+    }
+}
+
+pub fn open_streaming_url_reader(
+    url: &str,
+    tracker: &super::progress::ProgressTracker,
+) -> Result<(Box<dyn Read + Send>, u64)> {
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(20))
+        .timeout_read(std::time::Duration::from_secs(60))
+        .build();
+
+    let resp = match agent
+        .get(url)
+        .set(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        )
+        .set(
+            "Accept",
+            "text/xml,application/xml,application/json,application/octet-stream,*/*",
+        )
+        .call()
+    {
+        Ok(r) => r,
+        Err(ureq::Error::Status(code, r)) => {
+            let status_text = r.status_text().to_string();
+            if code == 404 {
+                anyhow::bail!("Feed not found (HTTP 404). Please verify that the feed URL is active and accessible.");
+            } else if code == 403 {
+                anyhow::bail!("Access denied (HTTP 403 Forbidden). The feed provider may require authentication or IP whitelisting.");
+            } else if code == 401 {
+                anyhow::bail!("Authentication required (HTTP 401 Unauthorized).");
+            } else {
+                anyhow::bail!("Feed server returned error: HTTP {} {}", code, status_text);
+            }
+        }
+        Err(ureq::Error::Transport(e)) => {
+            anyhow::bail!(
+                "Network connection failed: {}. Please check your internet connection and the feed URL.",
+                e
+            );
+        }
+    };
+
+    let content_len = resp
+        .header("Content-Length")
+        .and_then(|h| h.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    let content_type = resp.header("Content-Type").unwrap_or("").to_lowercase();
+    let content_encoding = resp.header("Content-Encoding").unwrap_or("").to_lowercase();
+    let url_lower = url.to_lowercase();
+
+    let is_gzip_declared = url_lower.ends_with(".gz")
+        || url_lower.ends_with(".gzip")
+        || content_encoding.contains("gzip")
+        || content_type.contains("gzip")
+        || content_type.contains("application/x-gzip");
+
+    let progress_reader = ProgressReader::new(
+        resp.into_reader(),
+        tracker.bytes_read.clone(),
+        tracker.cancel_flag.clone(),
+    );
+    let mut buffered = BufReader::with_capacity(1024 * 1024 * 4, progress_reader);
+
+    // Also check magic bytes (0x1F, 0x8B) in case neither URL nor headers explicitly indicate gzip
+    let has_gzip_magic = {
+        let peek = buffered.fill_buf().unwrap_or(&[]);
+        peek.len() >= 2 && peek[0] == 0x1F && peek[1] == 0x8B
+    };
+
+    if is_gzip_declared || has_gzip_magic {
+        let decoder = GzDecoder::new(buffered);
+        Ok((
+            Box::new(BufReader::with_capacity(1024 * 1024 * 2, decoder)),
+            content_len,
+        ))
+    } else {
+        Ok((Box::new(buffered), content_len))
     }
 }

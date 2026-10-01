@@ -22,7 +22,7 @@ pub struct IngestionProgress {
 pub struct ProgressTracker {
     pub bytes_read: Arc<AtomicU64>,
     pub records_ingested: Arc<AtomicU64>,
-    pub total_bytes: u64,
+    pub total_bytes: Arc<AtomicU64>,
     pub cancel_flag: Arc<AtomicBool>,
     pub start_time: Instant,
 }
@@ -33,7 +33,7 @@ impl ProgressTracker {
         Self {
             bytes_read: Arc::new(AtomicU64::new(0)),
             records_ingested: Arc::new(AtomicU64::new(0)),
-            total_bytes,
+            total_bytes: Arc::new(AtomicU64::new(total_bytes)),
             cancel_flag,
             start_time: now,
         }
@@ -47,9 +47,10 @@ impl ProgressTracker {
         let elapsed = self.start_time.elapsed().as_secs_f64();
         let bytes = self.bytes_read.load(Ordering::Relaxed);
         let records = self.records_ingested.load(Ordering::Relaxed);
+        let total = self.total_bytes.load(Ordering::Relaxed);
 
-        let percentage = if self.total_bytes > 0 {
-            ((bytes as f64 / self.total_bytes as f64) * 100.0).clamp(0.0, 100.0)
+        let percentage = if total > 0 {
+            ((bytes as f64 / total as f64) * 100.0).clamp(0.0, 100.0)
         } else {
             0.0
         };
@@ -66,8 +67,8 @@ impl ProgressTracker {
             0.0
         };
 
-        let estimated_remaining_secs = if bytes > 0 && mb_per_sec > 0.01 && self.total_bytes > bytes {
-            let remaining_bytes = self.total_bytes - bytes;
+        let estimated_remaining_secs = if bytes > 0 && mb_per_sec > 0.01 && total > bytes {
+            let remaining_bytes = total - bytes;
             let byte_rate = bytes as f64 / elapsed;
             Some(remaining_bytes as f64 / byte_rate)
         } else {
@@ -76,7 +77,7 @@ impl ProgressTracker {
 
         IngestionProgress {
             bytes_read: bytes,
-            total_bytes: self.total_bytes,
+            total_bytes: total,
             records_ingested: records,
             percentage,
             mb_per_sec,

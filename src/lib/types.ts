@@ -59,3 +59,14 @@ export interface QueryResultPage {
   total_records: number;
   total_pages: number;
 }
+
+export interface RecentFeed {
+  id: string;
+  filename: string;
+  source_type: "file" | "url";
+  file_size: string;
+  total_records: number;
+  column_count: number;
+  db_path: string;
+  analyzed_at: string;
+}

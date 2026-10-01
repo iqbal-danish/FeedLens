@@ -21,7 +21,7 @@
 
   <!-- Main View Area -->
   <main class="flex-1 flex flex-col overflow-hidden relative">
-    {#if !feedState.stats && !feedState.isIngesting && feedState.completeness.length === 0}
+    {#if !feedState.hasActiveDataset && !feedState.isIngesting}
       <!-- Empty State / Landing Dropzone -->
       <DropZone />
     {:else}
@@ -32,7 +32,7 @@
           <button
             onclick={() => (feedState.activeTab = "overview")}
             class="h-full px-4 flex items-center gap-2 text-xs font-semibold border-b-2 transition cursor-pointer {feedState.activeTab === 'overview'
-              ? 'border-cyan-400 text-cyan-400 bg-slate-800/40'
+              ? 'border-blue-500 text-blue-400 bg-slate-800/40'
               : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/20'}"
           >
             <LayoutDashboard class="w-3.5 h-3.5" />
@@ -43,7 +43,7 @@
           <button
             onclick={() => (feedState.activeTab = "completeness")}
             class="h-full px-4 flex items-center gap-2 text-xs font-semibold border-b-2 transition cursor-pointer {feedState.activeTab === 'completeness'
-              ? 'border-cyan-400 text-cyan-400 bg-slate-800/40'
+              ? 'border-blue-500 text-blue-400 bg-slate-800/40'
               : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/20'}"
           >
             <TableProperties class="w-3.5 h-3.5" />
@@ -57,7 +57,7 @@
           <button
             onclick={() => (feedState.activeTab = "explorer")}
             class="h-full px-4 flex items-center gap-2 text-xs font-semibold border-b-2 transition cursor-pointer {feedState.activeTab === 'explorer'
-              ? 'border-cyan-400 text-cyan-400 bg-slate-800/40'
+              ? 'border-blue-500 text-blue-400 bg-slate-800/40'
               : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/20'}"
           >
             <Database class="w-3.5 h-3.5" />
@@ -68,7 +68,7 @@
           <button
             onclick={() => (feedState.activeTab = "deepdive")}
             class="h-full px-4 flex items-center gap-2 text-xs font-semibold border-b-2 transition cursor-pointer {feedState.activeTab === 'deepdive'
-              ? 'border-cyan-400 text-cyan-400 bg-slate-800/40'
+              ? 'border-blue-500 text-blue-400 bg-slate-800/40'
               : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/20'}"
           >
             <BarChart3 class="w-3.5 h-3.5" />
@@ -97,8 +97,8 @@
 
   <!-- Toast Notification Overlay -->
   {#if feedState.toastMessage}
-    <div class="fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl bg-slate-900 border border-cyan-500/40 text-xs font-medium text-slate-200 shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
-      <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+    <div class="fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl bg-slate-900 border border-blue-500/40 text-xs font-medium text-slate-200 shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+      <span class="w-2 h-2 rounded-full bg-blue-400 animate-ping"></span>
       <span>{feedState.toastMessage}</span>
     </div>
   {/if}

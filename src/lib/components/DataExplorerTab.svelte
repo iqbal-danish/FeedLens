@@ -28,7 +28,7 @@
           placeholder="Search records across all attributes... (Press Enter)"
           bind:value={searchInput}
           onkeydown={handleSearchKeydown}
-          class="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-8 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition"
+          class="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-8 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
         />
         {#if searchInput}
           <button
@@ -41,7 +41,7 @@
       </div>
       <button
         onclick={() => feedState.applySearch(searchInput)}
-        class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 transition cursor-pointer"
+        class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 transition cursor-pointer"
       >
         Filter
       </button>
@@ -58,7 +58,7 @@
             feedState.currentPage = 1;
             feedState.fetchTablePage();
           }}
-          class="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-cyan-500"
+          class="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
         >
           <option value={25}>25</option>
           <option value={50}>50</option>
@@ -93,22 +93,22 @@
   </div>
 
   <!-- Data Table Container -->
-  <div class="flex-1 bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden shadow-sm flex flex-col relative">
+  <div class="flex-1 bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden flex flex-col relative">
     {#if feedState.isLoadingTable}
       <div class="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px] z-20 flex items-center justify-center">
-        <RefreshCw class="w-6 h-6 text-cyan-400 animate-spin" />
+        <RefreshCw class="w-6 h-6 text-blue-400 animate-spin" />
       </div>
     {/if}
 
-    <div class="overflow-x-auto overflow-y-auto flex-1">
+    <div class="overflow-x-auto overflow-y-auto flex-1 isolate">
       <table class="w-full text-left text-xs border-collapse">
-        <thead class="bg-slate-950/80 sticky top-0 z-10 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
-          <tr>
-            <th class="py-3 px-3 w-10 text-center text-slate-600">#</th>
+        <thead class="bg-slate-950 sticky top-0 z-10 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+          <tr class="bg-slate-950">
+            <th class="py-3 px-3 w-10 text-center text-slate-600 bg-slate-950">#</th>
             {#if feedState.tableData}
               {#each feedState.tableData.columns as col}
                 <th
-                  class="py-3 px-3 cursor-pointer hover:text-white whitespace-nowrap"
+                  class="py-3 px-3 cursor-pointer hover:text-white whitespace-nowrap bg-slate-950"
                   onclick={() => feedState.setSort(col)}
                 >
                   <div class="flex items-center gap-1.5">
@@ -128,7 +128,7 @@
                 class="hover:bg-slate-800/60 transition cursor-pointer group"
               >
                 <!-- Row index -->
-                <td class="py-2.5 px-3 text-center text-slate-600 font-mono text-[10px] group-hover:text-cyan-400">
+                <td class="py-2.5 px-3 text-center text-slate-600 font-mono text-[10px] group-hover:text-blue-400">
                   {(feedState.currentPage - 1) * feedState.pageSize + idx + 1}
                 </td>
                 <!-- Columns -->
@@ -157,7 +157,7 @@
     <!-- Table Footer with Matching Count -->
     <div class="px-4 py-2 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
       <div class="flex items-center gap-2">
-        <Eye class="w-3.5 h-3.5 text-cyan-400" />
+        <Eye class="w-3.5 h-3.5 text-blue-400" />
         <span>Click any row to inspect all fields</span>
       </div>
       {#if feedState.tableData}
