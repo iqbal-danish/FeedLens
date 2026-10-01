@@ -338,7 +338,7 @@
     {/if}
   </div>
 
-  <!-- Chart and Table Section -->
+  <!-- Chart and Duplicates Section (Top) -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <!-- Value Distribution Chart -->
     <div class="p-5 rounded-xl bg-slate-900/70 border border-slate-800 shadow-sm flex flex-col">
@@ -422,24 +422,27 @@
     </div>
   </div>
 
-  <!-- Detailed Frequency Table -->
+  <!-- Detailed Frequency Table (Full Width, Expanded Below) -->
   <div class="p-5 rounded-xl bg-slate-900/70 border border-slate-800 flex flex-col">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
       <div>
         <h3 class="text-sm font-bold text-white mb-0.5">Top Frequency Breakdown</h3>
         <p class="text-xs text-slate-400">Complete ranking of the most frequent values for <span class="text-blue-400 font-mono">{feedState.selectedColumn}</span></p>
       </div>
-      <button
-        onclick={() => feedState.exportColumnFrequency(feedState.selectedColumn)}
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition shadow-sm cursor-pointer self-start sm:self-auto"
-        title="Export this column's frequency distribution to CSV"
-      >
-        <Download class="w-3.5 h-3.5 text-white" />
-        <span>Export Frequency to CSV</span>
-      </button>
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] font-mono text-slate-500">{feedState.columnDistribution.length} values</span>
+        <button
+          onclick={() => feedState.exportColumnFrequency(feedState.selectedColumn)}
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white transition shadow-sm cursor-pointer"
+          title="Export this column's frequency distribution to CSV"
+        >
+          <Download class="w-3.5 h-3.5 text-white" />
+          <span>Export Frequency to CSV</span>
+        </button>
+      </div>
     </div>
 
-    <div class="overflow-x-auto border border-slate-800 rounded-lg max-h-72 overflow-y-auto isolate">
+    <div class="overflow-x-auto border border-slate-800 rounded-lg overflow-y-auto isolate" style="max-height: calc(50 * 2.25rem + 2.5rem);">
       <table class="w-full text-left text-xs border-collapse">
         <thead class="bg-slate-950 sticky top-0 z-10 text-slate-400 font-semibold uppercase text-[10px] border-b border-slate-800">
           <tr class="bg-slate-950">
