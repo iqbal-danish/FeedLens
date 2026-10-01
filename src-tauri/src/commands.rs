@@ -1,4 +1,4 @@
-use std::fs;
+use std::fs::{self, File};
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,7 +13,7 @@ use crate::db::{ColumnCompleteness, DuplicateEntry, DuckDbManager, OverviewStats
 use crate::engine::decompressor::open_streaming_reader;
 use crate::engine::json_stream::JsonStreamParser;
 use crate::engine::progress::ProgressTracker;
-use crate::engine::xml_stream::XmlStreamParser;
+use crate::engine::xml_stream::{detect_xml_record_tag, XmlStreamParser};
 use crate::engine::{detect_feed_format, FeedFormat};
 
 #[derive(Serialize, Deserialize)]
@@ -65,64 +65,6 @@ pub async fn pick_feed_file() -> Result<Option<SelectedFileInfo>, String> {
 }
 
 #[tauri::command]
-pub async fn generate_demo_feed(record_count: usize) -> Result<SelectedFileInfo, String> {
-    use std::io::Write;
-    let mut temp_path = std::env::temp_dir();
-    temp_path.push(format!("feedlens_demo_{}.xml", record_count));
-
-    let titles = [
-        "Senior Rust Engineer", "Frontend Architect", "Site Reliability Engineer",
-        "Data Scientist", "Full Stack Developer", "Machine Learning Specialist",
-        "DevOps Engineer", "Product Manager", "Security Analyst", "Cloud Architect"
-    ];
-    let companies = [
-        "Acme Corp", "TechWave", "CloudMatrix", "NovaScale", "CyberDynamics",
-        "HyperFlow", "QuantumLogic", "PeakSystems", "OmniData", "Vertex AI"
-    ];
-    let cities = ["San Francisco", "New York", "London", "Berlin", "Tokyo", "Austin", "Seattle", "Toronto", "Remote"];
-    let categories = ["Engineering", "Data & AI", "Product", "Security", "Operations"];
-    let job_types = ["Full-Time", "Contract", "Part-Time", "Remote"];
-
-    let file = fs::File::create(&temp_path).map_err(|e| e.to_string())?;
-    let mut writer = std::io::BufWriter::with_capacity(1024 * 1024 * 4, file);
-
-    writer.write_all(b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<source>\n  <publisher>FeedLens Demo Feed</publisher>\n").map_err(|e| e.to_string())?;
-
-    for i in 1..=record_count {
-        let title = titles[i % titles.len()];
-        let company = companies[i % companies.len()];
-        let city = cities[i % cities.len()];
-        let category = categories[i % categories.len()];
-        let job_type = job_types[i % job_types.len()];
-        let salary_min = 70000 + ((i * 350) % 80000);
-        let salary_max = salary_min + 30000;
-
-        // Introduce realistic nulls/empty fields for fill rate testing
-        let country_val = if i % 15 == 0 { "" } else { "US" };
-        let department = if i % 4 == 0 { "" } else { "Technology" };
-
-        let record_str = format!(
-            "  <job>\n    <id>JOB-{:06}</id>\n    <title>{}</title>\n    <company>{}</company>\n    <location>\n      <city>{}</city>\n      <country>{}</country>\n    </location>\n    <category>{}</category>\n    <department>{}</department>\n    <job_type>{}</job_type>\n    <salary_min>{}</salary_min>\n    <salary_max>{}</salary_max>\n    <posted_at>2026-09-{:02}</posted_at>\n    <url>https://jobs.example.com/{:06}</url>\n  </job>\n",
-            i, title, company, city, country_val, category, department, job_type, salary_min, salary_max, (i % 28) + 1, i
-        );
-        writer.write_all(record_str.as_bytes()).map_err(|e| e.to_string())?;
-    }
-
-    writer.write_all(b"</source>\n").map_err(|e| e.to_string())?;
-    writer.flush().map_err(|e| e.to_string())?;
-
-    let path_str = temp_path.to_string_lossy().to_string();
-    let size_bytes = fs::metadata(&temp_path).map(|m| m.len()).unwrap_or(0);
-
-    Ok(SelectedFileInfo {
-        path: path_str,
-        filename: format!("feedlens_demo_{}.xml", record_count),
-        size_bytes,
-        format: "XML".to_string(),
-    })
-}
-
-#[tauri::command]
 pub async fn pick_export_file(default_name: String, is_json: bool) -> Result<Option<String>, String> {
     let ext = if is_json { "json" } else { "csv" };
     let desc = if is_json { "JSON Files" } else { "CSV Files" };
@@ -170,17 +112,17 @@ pub async fn start_ingestion(
     let app_handle = app.clone();
     let last_elapsed_ref = state.last_elapsed.clone();
 
-    // Spawn ingestion thread
+    // Spawn ingestion background thread
     std::thread::spawn(move || {
         let start_time = Instant::now();
         let tracker_clone = tracker.clone();
         let app_handle_progress = app_handle.clone();
 
-        // Spawn progress ticker thread
         let is_running = Arc::new(AtomicBool::new(true));
         let is_running_ticker = is_running.clone();
         let ticker_tracker = tracker.clone();
 
+        // High-frequency UI progress reporter
         std::thread::spawn(move || {
             while is_running_ticker.load(Ordering::Relaxed) {
                 std::thread::sleep(std::time::Duration::from_millis(150));
@@ -190,64 +132,122 @@ pub async fn start_ingestion(
         });
 
         let ingest_result = (|| -> anyhow::Result<()> {
-            let reader = open_streaming_reader(&file_path, &tracker_clone)?;
             let format = detect_feed_format(&file_path);
-
-            let mut batch = Vec::with_capacity(10_000);
-            let mut is_first_batch = true;
 
             match format {
                 FeedFormat::Xml | FeedFormat::Auto => {
-                    let mut xml_parser = XmlStreamParser::new(BufReader::new(reader), record_tag);
+                    // Step 1: Detect repeating record tag accurately
+                    let target_tag = match record_tag {
+                        Some(t) if !t.is_empty() => t,
+                        _ => {
+                            // Detect from initial bytes of file
+                            let initial_file = File::open(&file_path)?;
+                            detect_xml_record_tag(initial_file, 5 * 1024 * 1024).unwrap_or_else(|_| "job".to_string())
+                        }
+                    };
+
+                    println!("FeedLens: Detected repeating XML tag: <{}>", target_tag);
+
+                    // Step 2: Open transparent decompressor stream
+                    let reader = open_streaming_reader(&file_path, &tracker_clone)?;
+                    let mut xml_parser = XmlStreamParser::new(BufReader::new(reader), &target_tag);
+
+                    let mut initial_batch = Vec::with_capacity(2000);
+                    let mut all_discovered_columns = std::collections::BTreeSet::new();
+
+                    // Read first 2,000 records to discover complete schema
+                    while initial_batch.len() < 2000 {
+                        if tracker_clone.is_cancelled() {
+                            break;
+                        }
+                        if let Some(rec) = xml_parser.next_record()? {
+                            for k in rec.fields.keys() {
+                                all_discovered_columns.insert(k.clone());
+                            }
+                            initial_batch.push(rec.fields);
+                            tracker_clone.records_ingested.fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if initial_batch.is_empty() {
+                        return Ok(());
+                    }
+
+                    let cols: Vec<String> = all_discovered_columns.into_iter().collect();
+                    db.init_table(&cols)?;
+                    db.insert_batch(&initial_batch)?;
+                    initial_batch.clear();
+
+                    // Stream remaining records in high-throughput 10,000 record batches
+                    let mut batch = Vec::with_capacity(10_000);
                     while let Some(rec) = xml_parser.next_record()? {
                         if tracker_clone.is_cancelled() {
                             break;
                         }
-
                         batch.push(rec.fields);
                         tracker_clone.records_ingested.fetch_add(1, Ordering::Relaxed);
 
                         if batch.len() >= 10_000 {
-                            if is_first_batch {
-                                let initial_cols: Vec<String> = batch[0].keys().cloned().collect();
-                                db.init_table(&initial_cols)?;
-                                is_first_batch = false;
-                            }
                             db.insert_batch(&batch)?;
                             batch.clear();
                         }
                     }
+
+                    if !batch.is_empty() {
+                        db.insert_batch(&batch)?;
+                    }
                 }
                 FeedFormat::Json => {
+                    let reader = open_streaming_reader(&file_path, &tracker_clone)?;
                     let mut json_parser = JsonStreamParser::new(BufReader::new(reader));
+
+                    let mut initial_batch = Vec::with_capacity(2000);
+                    let mut all_discovered_columns = std::collections::BTreeSet::new();
+
+                    while initial_batch.len() < 2000 {
+                        if tracker_clone.is_cancelled() {
+                            break;
+                        }
+                        if let Some(rec) = json_parser.next_record()? {
+                            for k in rec.fields.keys() {
+                                all_discovered_columns.insert(k.clone());
+                            }
+                            initial_batch.push(rec.fields);
+                            tracker_clone.records_ingested.fetch_add(1, Ordering::Relaxed);
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if initial_batch.is_empty() {
+                        return Ok(());
+                    }
+
+                    let cols: Vec<String> = all_discovered_columns.into_iter().collect();
+                    db.init_table(&cols)?;
+                    db.insert_batch(&initial_batch)?;
+                    initial_batch.clear();
+
+                    let mut batch = Vec::with_capacity(10_000);
                     while let Some(rec) = json_parser.next_record()? {
                         if tracker_clone.is_cancelled() {
                             break;
                         }
-
                         batch.push(rec.fields);
                         tracker_clone.records_ingested.fetch_add(1, Ordering::Relaxed);
 
                         if batch.len() >= 10_000 {
-                            if is_first_batch {
-                                let initial_cols: Vec<String> = batch[0].keys().cloned().collect();
-                                db.init_table(&initial_cols)?;
-                                is_first_batch = false;
-                            }
                             db.insert_batch(&batch)?;
                             batch.clear();
                         }
                     }
-                }
-            }
 
-            // Flush remaining records
-            if !batch.is_empty() {
-                if is_first_batch {
-                    let initial_cols: Vec<String> = batch[0].keys().cloned().collect();
-                    db.init_table(&initial_cols)?;
+                    if !batch.is_empty() {
+                        db.insert_batch(&batch)?;
+                    }
                 }
-                db.insert_batch(&batch)?;
             }
 
             Ok(())
@@ -271,6 +271,7 @@ pub async fn start_ingestion(
             }
             Err(e) => {
                 let err_msg = e.to_string();
+                eprintln!("Ingestion error: {}", err_msg);
                 let err_progress = tracker_clone.snapshot("error", "Error during ingestion", Some(err_msg.clone()));
                 let _ = app_handle.emit("ingest-progress", &err_progress);
                 let _ = app_handle.emit("ingest-error", &err_msg);

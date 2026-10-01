@@ -84,17 +84,6 @@ export class FeedLensState {
     }
   }
 
-  async loadDemo(count = 25000) {
-    try {
-      this.showToast(`Generating ${count.toLocaleString()} sample job records...`);
-      const file = await invoke<SelectedFileInfo>("generate_demo_feed", { recordCount: count });
-      this.currentFile = file;
-      await this.startIngest(file.path);
-    } catch (e: any) {
-      this.showToast(`Failed to generate demo: ${e.message || e}`);
-    }
-  }
-
   async startIngest(filePath: string) {
     this.isIngesting = true;
     this.stats = null;

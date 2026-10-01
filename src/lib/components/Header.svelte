@@ -1,6 +1,6 @@
 <script lang="ts">
   import { feedState } from "$lib/state.svelte";
-  import { FileUp, Sparkles, Download, Database, Layers, BarChart3, TableProperties } from "@lucide/svelte";
+  import { FileUp, Download, Database, Layers, BarChart3, TableProperties } from "@lucide/svelte";
 
   function formatBytes(bytes: number): string {
     if (!bytes || bytes === 0) return "0 B";
@@ -54,20 +54,10 @@
     <button
       onclick={() => feedState.openFile()}
       disabled={feedState.isIngesting}
-      class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-slate-600 transition shadow-sm disabled:opacity-50 cursor-pointer"
+      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-950 bg-cyan-400 hover:bg-cyan-300 transition shadow-sm disabled:opacity-50 cursor-pointer"
     >
-      <FileUp class="w-3.5 h-3.5 text-cyan-400" />
-      <span>Open Feed</span>
-    </button>
-
-    <!-- Quick Demo Generator -->
-    <button
-      onclick={() => feedState.loadDemo(25000)}
-      disabled={feedState.isIngesting}
-      class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-cyan-200 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-800/60 transition shadow-sm disabled:opacity-50 cursor-pointer"
-    >
-      <Sparkles class="w-3.5 h-3.5 text-cyan-400" />
-      <span>Load 25k Demo</span>
+      <FileUp class="w-3.5 h-3.5 text-slate-950" />
+      <span>Open Feed File</span>
     </button>
 
     <!-- Export Menu -->

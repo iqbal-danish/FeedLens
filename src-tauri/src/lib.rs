@@ -23,7 +23,6 @@ pub fn run() {
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::pick_feed_file,
-            commands::generate_demo_feed,
             commands::pick_export_file,
             commands::start_ingestion,
             commands::cancel_ingestion,

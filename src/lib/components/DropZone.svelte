@@ -1,6 +1,6 @@
 <script lang="ts">
   import { feedState } from "$lib/state.svelte";
-  import { FileUp, Sparkles, Database, Cpu, Zap, Archive, HardDrive } from "@lucide/svelte";
+  import { FileUp, Database, Cpu, Zap, Archive, HardDrive } from "@lucide/svelte";
 </script>
 
 <div class="h-full flex flex-col items-center justify-center p-8 text-center select-none overflow-y-auto">
@@ -22,30 +22,14 @@
       Analyze 100 GB+ XML and JSON feeds with instant start, zero disk pre-extraction, and sub-150ms analytical queries powered by Rust and DuckDB OLAP.
     </p>
 
-    <!-- Main Action Buttons -->
-    <div class="flex flex-col sm:flex-row items-center justify-center gap-3 mb-8">
+    <!-- Main Action Button -->
+    <div class="flex items-center justify-center mb-8">
       <button
         onclick={() => feedState.openFile()}
-        class="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm shadow-lg shadow-cyan-500/30 transition transform hover:-translate-y-0.5 cursor-pointer"
+        class="flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-sm shadow-xl shadow-cyan-500/25 transition transform hover:-translate-y-0.5 cursor-pointer"
       >
-        <FileUp class="w-4 h-4" />
-        <span>Select Feed File</span>
-      </button>
-
-      <button
-        onclick={() => feedState.loadDemo(25000)}
-        class="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-slate-600 font-semibold text-sm transition cursor-pointer"
-      >
-        <Sparkles class="w-4 h-4 text-cyan-400" />
-        <span>Try 25k Demo Feed</span>
-      </button>
-
-      <button
-        onclick={() => feedState.loadDemo(100000)}
-        class="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-600 font-medium text-sm transition cursor-pointer"
-      >
-        <Sparkles class="w-4 h-4 text-amber-400" />
-        <span>Try 100k Benchmark</span>
+        <FileUp class="w-4 h-4 text-slate-950" />
+        <span>Select Feed File (.xml, .json, .gz, .zip, .bz2)</span>
       </button>
     </div>
 
