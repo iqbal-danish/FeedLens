@@ -10,6 +10,20 @@
   import RecordInspectorModal from "$lib/components/RecordInspectorModal.svelte";
 
   import { LayoutDashboard, TableProperties, Database, BarChart3 } from "@lucide/svelte";
+  import { onMount } from "svelte";
+  import { invoke } from "@tauri-apps/api/core";
+  import type { SelectedFileInfo } from "$lib/types";
+
+  onMount(async () => {
+    try {
+      const cliFile = await invoke<SelectedFileInfo | null>("get_cli_file");
+      if (cliFile && cliFile.path) {
+        feedState.currentFile = cliFile;
+      }
+    } catch (e) {
+      console.warn("Could not check CLI file:", e);
+    }
+  });
 </script>
 
 <div class="h-screen w-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">

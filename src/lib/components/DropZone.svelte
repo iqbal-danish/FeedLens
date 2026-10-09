@@ -26,6 +26,13 @@
   let jobElement = $state("Auto");
   let ingestionMode = $state<"extreme" | "fast" | "full">("extreme");
 
+  $effect(() => {
+    if (feedState.currentFile && feedState.currentFile.path) {
+      selectedFilePath = feedState.currentFile.path;
+      selectedFileObj = feedState.currentFile;
+    }
+  });
+
   async function handleBrowse() {
     const file = await feedState.pickFeedFile();
     if (file) {

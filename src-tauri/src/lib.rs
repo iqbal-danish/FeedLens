@@ -52,6 +52,7 @@ pub fn run() {
             commands::get_duplicate_records,
             commands::query_records,
             commands::export_records,
+            commands::get_cli_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

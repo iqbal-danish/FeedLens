@@ -525,3 +525,27 @@ pub async fn export_records(
         .export_records(&export_path, is_json, filter_text)
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn get_cli_file() -> Option<SelectedFileInfo> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        let p = std::path::PathBuf::from(&args[1]);
+        if p.exists() {
+            let filename = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| args[1].clone());
+            let size_bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+            let format = if filename.to_lowercase().ends_with(".json") || filename.to_lowercase().ends_with(".jsonl") {
+                "JSON".to_string()
+            } else {
+                "XML".to_string()
+            };
+            return Some(SelectedFileInfo {
+                path: p.to_string_lossy().to_string(),
+                filename,
+                size_bytes,
+                format,
+            });
+        }
+    }
+    None
+}
