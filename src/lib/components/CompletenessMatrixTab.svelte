@@ -93,7 +93,7 @@
             <tr class="hover:bg-slate-800/40 transition">
               <!-- Name -->
               <td class="py-3 px-4 font-semibold text-white">
-                <span class="font-mono text-blue-300">{col.original_name}</span>
+                <span class="font-mono text-blue-300" title={col.original_name}>{col.original_name}</span>
               </td>
 
               <!-- Fill Rate -->

@@ -194,11 +194,12 @@
         <button
           type="button"
           onclick={toggleDropdown}
-          class="flex items-center justify-between gap-3 bg-slate-950 hover:bg-slate-900 border border-slate-700/80 hover:border-blue-500/80 text-white rounded-xl px-3.5 py-2 text-xs font-mono transition-all duration-150 shadow-inner group min-w-[280px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 cursor-pointer"
+          class="flex items-center justify-between gap-3 bg-slate-950 hover:bg-slate-900 border border-slate-700/80 hover:border-blue-500/80 text-white rounded-xl px-3.5 py-2 text-xs font-mono transition-all duration-150 shadow-inner group min-w-[320px] max-w-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 cursor-pointer"
+          title={feedState.selectedColumn || "Select attribute..."}
         >
-          <div class="flex items-center gap-2 truncate">
+          <div class="flex items-center gap-2 truncate flex-1 min-w-0">
             <span class="w-2 h-2 rounded-full bg-blue-400 group-hover:scale-125 transition-transform shrink-0"></span>
-            <span class="font-bold text-slate-100 truncate">
+            <span class="font-bold text-slate-100 truncate" title={feedState.selectedColumn}>
               {feedState.selectedColumn || "Select attribute..."}
             </span>
           </div>
@@ -212,10 +213,10 @@
           </div>
         </button>
 
-        <!-- Floating Dropdown Menu -->
+        <!-- Floating Dropdown Menu (Expanded Width to fit full attribute paths) -->
         {#if isDropdownOpen}
           <div
-            class="absolute top-full left-0 mt-2 w-[380px] max-h-[460px] bg-slate-900/98 border border-slate-750 rounded-2xl shadow-2xl backdrop-blur-2xl z-50 flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150"
+            class="absolute top-full left-0 mt-2 w-[540px] max-w-[92vw] max-h-[480px] bg-slate-900/98 border border-slate-750 rounded-2xl shadow-2xl backdrop-blur-2xl z-50 flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150"
             style="box-shadow: 0 20px 50px -10px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.06);"
           >
             <!-- Search Bar -->
@@ -279,8 +280,9 @@
                     type="button"
                     onclick={() => selectColumn(col.column_name)}
                     class="w-full text-left flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-xs font-mono transition-colors group cursor-pointer {isSelected ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40 font-bold' : 'hover:bg-slate-800/70 text-slate-300 border border-transparent'}"
+                    title={col.original_name}
                   >
-                    <div class="flex items-center gap-2 truncate">
+                    <div class="flex items-center gap-2 truncate flex-1 min-w-0" title={col.original_name}>
                       <span class="w-1.5 h-1.5 rounded-full {isSelected ? 'bg-blue-400 scale-125' : 'bg-slate-600 group-hover:bg-slate-400'} shrink-0"></span>
                       <span class="truncate {isSelected ? 'text-white' : 'text-slate-200'}">{col.original_name}</span>
                     </div>
@@ -313,8 +315,8 @@
           <span class="text-slate-400">Total Count:</span>
           <span class="font-bold text-slate-200">
             {currentColumnInfo()!.valid_count.toLocaleString()}
-            {#if currentColumnInfo()!.null_count > 0}
-              <span class="text-slate-500 font-normal"> / {currentColumnInfo()!.total_rows.toLocaleString()}</span>
+            {#if currentColumnInfo()!.total_records > currentColumnInfo()!.valid_count}
+              <span class="text-slate-500 font-normal"> / {currentColumnInfo()!.total_records.toLocaleString()}</span>
             {/if}
           </span>
         </div>
