@@ -21,9 +21,6 @@
       <div>
         <div class="flex items-center gap-2">
           <span class="font-extrabold text-base tracking-tight text-white">FeedLens</span>
-          <span class="text-[10px] font-mono uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30">
-            DUCKDB CORE
-          </span>
         </div>
         <p class="text-[11px] text-slate-400 -mt-0.5 font-medium">High-Performance Feed Analytics</p>
       </div>

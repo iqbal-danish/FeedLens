@@ -17,7 +17,7 @@
   let chartInstance: echarts.ECharts | null = null;
 
   let currentFilter = $state<"all" | "complete" | "warning" | "critical">("all");
-  let sortMode = $state<"lowest_first" | "highest_first">("lowest_first");
+  let sortMode = $state<"lowest_first" | "highest_first">("highest_first");
   let searchQuery = $state("");
 
   let totalRecords = $derived(feedState.stats?.total_records ?? 0);
@@ -179,7 +179,7 @@
             {
               value: completeCount,
               name: "100% Complete",
-              itemStyle: { color: "#3b82f6" },
+              itemStyle: { color: "#10b981" },
             },
             {
               value: warningCount,
@@ -315,10 +315,10 @@
         <div class="w-full grid grid-cols-3 gap-2.5 pt-4 border-t border-slate-800 text-center">
           <button
             onclick={() => setFilter("complete")}
-            class="data-card-subtle p-2.5 rounded-xl hover:border-blue-500/60 transition cursor-pointer text-center group {currentFilter === 'complete' ? 'ring-1 ring-blue-500' : ''}"
+            class="data-card-subtle p-2.5 rounded-xl hover:border-emerald-500/60 transition cursor-pointer text-center group {currentFilter === 'complete' ? 'ring-1 ring-emerald-500' : ''}"
           >
             <div class="micro-title">COMPLETE (100%)</div>
-            <div class="kpi-number text-sm text-cyan-400 mt-1">{completeCols.length} fields</div>
+            <div class="kpi-number text-sm text-emerald-400 mt-1">{completeCols.length} fields</div>
           </button>
           <button
             onclick={() => setFilter("warning")}
@@ -479,27 +479,27 @@
                 feedState.fetchDeepDive(col.column_name);
                 feedState.activeTab = "deepdive";
               }}
-              class="w-full data-card-subtle p-3.5 rounded-xl flex items-center justify-between hover:border-slate-600 transition cursor-pointer group text-left"
+              class="w-full data-card-subtle p-3 rounded-xl flex flex-col justify-between hover:border-slate-600 transition cursor-pointer group text-left"
               title="Click to inspect '{col.original_name}' in Deep Dive"
             >
-              <div class="flex items-center gap-3 min-w-0 pr-2">
-                <div class="w-2.5 h-2.5 rounded-full {badge.barColor} shrink-0"></div>
-                <div class="min-w-0">
-                  <div class="tabular-tag text-xs font-bold text-white group-hover:text-blue-300 truncate" title={col.original_name}>
-                    {col.original_name}
-                  </div>
-                  <div class="text-[11px] text-slate-400">
-                    {col.valid_count.toLocaleString()} rows populated
-                  </div>
+              <!-- Top Row: Attribute Name on Left, Rows & Percentage on Right -->
+              <div class="w-full flex items-center justify-between gap-3">
+                <div class="tabular-tag text-xs font-semibold text-slate-200 group-hover:text-blue-300 truncate" title={col.original_name}>
+                  {col.original_name}
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0 font-mono text-xs">
+                  <span class="text-slate-400 text-[11px]">{col.valid_count.toLocaleString()} rows</span>
+                  <span class="text-slate-600">·</span>
+                  <span class="font-bold {badge.textColor}">{col.fill_rate.toFixed(1)}%</span>
                 </div>
               </div>
-              <div class="flex items-center gap-4 shrink-0">
-                <div class="w-28 bg-slate-800 h-2 rounded-full overflow-hidden hidden sm:block">
-                  <div class="h-full {badge.barColor} rounded-full" style="width: {col.fill_rate}%"></div>
-                </div>
-                <span class="kpi-number text-xs font-bold {badge.textColor} w-14 text-right">
-                  {col.fill_rate.toFixed(1)}%
-                </span>
+
+              <!-- Bottom Row: Full-width Progress Bar with Fill Animation -->
+              <div class="w-full bg-slate-800/80 h-1.5 rounded-full overflow-hidden mt-2.5">
+                <div
+                  class="h-full {badge.barColor} rounded-full animate-fill-bar transition-all duration-300"
+                  style="--fill-width: {Math.max(1.5, col.fill_rate)}%; width: {Math.max(1.5, col.fill_rate)}%;"
+                ></div>
               </div>
             </button>
           {/each}

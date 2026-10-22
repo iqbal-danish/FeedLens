@@ -101,3 +101,16 @@
   color: #93c5fd;
   box-shadow: 0 0 12px rgba(59, 130, 246, 0.15);
 }
+
+@keyframes fillBarAnim {
+  from {
+    width: 0%;
+  }
+  to {
+    width: var(--fill-width, 100%);
+  }
+}
+
+.animate-fill-bar {
+  animation: fillBarAnim 0.75s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
