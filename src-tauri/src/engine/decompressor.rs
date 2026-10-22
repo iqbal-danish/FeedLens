@@ -1,6 +1,9 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver};
+use std::sync::Arc;
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
 use bzip2::read::BzDecoder;
@@ -108,6 +111,66 @@ pub fn open_streaming_reader<P: AsRef<Path>>(
     }
 }
 
+/// Bounded streaming reader that receives chunks from an asynchronous network downloader thread.
+/// Memory footprint is strictly bounded to the channel capacity (e.g. 128 chunks * 128KB = 16MB max).
+pub struct ChannelStreamReader {
+    rx: Receiver<std::result::Result<Vec<u8>, String>>,
+    current_chunk: Option<Vec<u8>>,
+    cursor: usize,
+    cancel_flag: Arc<AtomicBool>,
+}
+
+impl ChannelStreamReader {
+    pub fn new(rx: Receiver<std::result::Result<Vec<u8>, String>>, cancel_flag: Arc<AtomicBool>) -> Self {
+        Self {
+            rx,
+            current_chunk: None,
+            cursor: 0,
+            cancel_flag,
+        }
+    }
+}
+
+impl Read for ChannelStreamReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.cancel_flag.load(Ordering::Relaxed) {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "Ingestion cancelled by user"));
+        }
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        loop {
+            if let Some(ref chunk) = self.current_chunk {
+                if self.cursor < chunk.len() {
+                    let available = &chunk[self.cursor..];
+                    let to_copy = std::cmp::min(buf.len(), available.len());
+                    buf[..to_copy].copy_from_slice(&available[..to_copy]);
+                    self.cursor += to_copy;
+                    return Ok(to_copy);
+                } else {
+                    self.current_chunk = None;
+                    self.cursor = 0;
+                }
+            }
+
+            match self.rx.recv() {
+                Ok(Ok(next_chunk)) => {
+                    self.current_chunk = Some(next_chunk);
+                    self.cursor = 0;
+                }
+                Ok(Err(err_msg)) => {
+                    return Err(io::Error::new(io::ErrorKind::Other, err_msg));
+                }
+                Err(_) => {
+                    // Channel closed (downloader reached EOF)
+                    return Ok(0);
+                }
+            }
+        }
+    }
+}
+
 pub fn open_streaming_url_reader(
     url: &str,
     tracker: &super::progress::ProgressTracker,
@@ -165,12 +228,39 @@ pub fn open_streaming_url_reader(
         || content_type.contains("gzip")
         || content_type.contains("application/x-gzip");
 
-    let progress_reader = ProgressReader::new(
-        resp.into_reader(),
-        tracker.bytes_read.clone(),
-        tracker.cancel_flag.clone(),
-    );
-    let mut buffered = BufReader::with_capacity(1024 * 1024 * 4, progress_reader);
+    // Decoupled streaming ring buffer: 128 chunks * 128KB = 16MB maximum memory cap
+    let (tx, rx) = sync_channel::<std::result::Result<Vec<u8>, String>>(128);
+    let bytes_counter = tracker.bytes_read.clone();
+    let cancel_flag = tracker.cancel_flag.clone();
+    let mut net_reader = resp.into_reader();
+
+    std::thread::Builder::new()
+        .name("feedlens-url-downloader".to_string())
+        .spawn(move || {
+            let mut chunk = vec![0u8; 128 * 1024];
+            loop {
+                if cancel_flag.load(Ordering::Relaxed) {
+                    let _ = tx.send(Err("Ingestion cancelled".to_string()));
+                    break;
+                }
+                match net_reader.read(&mut chunk) {
+                    Ok(0) => break, // EOF reached cleanly
+                    Ok(n) => {
+                        bytes_counter.fetch_add(n as u64, Ordering::Relaxed);
+                        if tx.send(Ok(chunk[..n].to_vec())).is_err() {
+                            break; // Consumer dropped/cancelled
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Err(e.to_string()));
+                        break;
+                    }
+                }
+            }
+        })?;
+
+    let channel_reader = ChannelStreamReader::new(rx, tracker.cancel_flag.clone());
+    let mut buffered = BufReader::with_capacity(1024 * 1024 * 2, channel_reader);
 
     // Also check magic bytes (0x1F, 0x8B) in case neither URL nor headers explicitly indicate gzip
     let has_gzip_magic = {
