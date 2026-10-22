@@ -183,9 +183,9 @@
   });
 </script>
 
-<div class="p-6 h-full flex flex-col space-y-5 overflow-y-auto">
+<div class="p-6 h-full flex flex-col space-y-5 overflow-y-auto max-w-7xl mx-auto w-full">
   <!-- Attribute Selector Header -->
-  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900/70 border border-slate-800">
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl data-card">
     <div class="relative flex items-center gap-3" bind:this={dropdownRef}>
       <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 shrink-0">Select Attribute:</span>
       

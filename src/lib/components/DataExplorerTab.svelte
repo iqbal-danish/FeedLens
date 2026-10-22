@@ -16,7 +16,7 @@
   }
 </script>
 
-<div class="p-6 h-full flex flex-col space-y-4">
+<div class="p-6 h-full flex flex-col space-y-4 max-w-7xl mx-auto w-full">
   <!-- Controls Bar -->
   <div class="flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
     <!-- Search Box -->

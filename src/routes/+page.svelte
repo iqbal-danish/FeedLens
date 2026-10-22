@@ -26,7 +26,12 @@
   });
 </script>
 
-<div class="h-screen w-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden font-sans select-none">
+<div class="h-screen w-screen flex flex-col bg-slate-950 text-slate-100 overflow-hidden font-sans select-none relative">
+  <!-- Ambient light gradients that softly glow through frosted glass and cards -->
+  <div class="absolute -top-32 left-1/4 w-[500px] h-[350px] bg-blue-600/12 rounded-full blur-[100px] pointer-events-none z-0"></div>
+  <div class="absolute top-1/3 -right-20 w-[450px] h-[400px] bg-indigo-600/10 rounded-full blur-[110px] pointer-events-none z-0"></div>
+  <div class="absolute -bottom-20 left-1/3 w-[500px] h-[350px] bg-cyan-600/8 rounded-full blur-[100px] pointer-events-none z-0"></div>
+
   <!-- Top App Header -->
   <Header />
 

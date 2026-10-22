@@ -40,7 +40,7 @@
   }
 </script>
 
-<div class="p-6 h-full flex flex-col space-y-4">
+<div class="p-6 h-full flex flex-col space-y-4 max-w-7xl mx-auto w-full">
   <!-- Controls Bar -->
   <div class="flex items-center justify-between gap-4 shrink-0">
     <div class="relative max-w-sm w-full">
