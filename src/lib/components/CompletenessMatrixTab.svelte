@@ -49,7 +49,7 @@
         type="text"
         placeholder="Filter attributes..."
         bind:value={searchFilter}
-        class="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
+        class="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition shadow-sm font-mono"
       />
     </div>
 
@@ -59,33 +59,33 @@
   </div>
 
   <!-- Matrix Table Container -->
-  <div class="flex-1 bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden flex flex-col">
+  <div class="flex-1 data-card rounded-2xl overflow-hidden flex flex-col">
     <div class="overflow-x-auto overflow-y-auto flex-1 isolate">
       <table class="w-full text-left text-xs border-collapse">
-        <thead class="bg-slate-950 sticky top-0 z-10 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+        <thead class="bg-slate-950 sticky top-0 z-10 border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-[10.5px]">
           <tr class="bg-slate-950">
-            <th class="py-3 px-4 bg-slate-950 cursor-pointer hover:text-white" onclick={() => toggleSort("name")}>
+            <th class="py-3.5 px-4 bg-slate-950 cursor-pointer hover:text-white" onclick={() => toggleSort("name")}>
               <div class="flex items-center gap-1.5">
                 <span>Attribute</span>
                 <ArrowUpDown class="w-3 h-3 text-slate-500" />
               </div>
             </th>
-            <th class="py-3 px-4 text-right cursor-pointer hover:text-white" onclick={() => toggleSort("fill")}>
+            <th class="py-3.5 px-4 text-right cursor-pointer hover:text-white" onclick={() => toggleSort("fill")}>
               <div class="flex items-center justify-end gap-1.5">
                 <span>Fill Rate</span>
                 <ArrowUpDown class="w-3 h-3 text-slate-500" />
               </div>
             </th>
-            <th class="py-3 px-4 text-right">Valid Rows</th>
-            <th class="py-3 px-4 text-right">Missing / Null</th>
-            <th class="py-3 px-4 text-right cursor-pointer hover:text-white" onclick={() => toggleSort("uniques")}>
+            <th class="py-3.5 px-4 text-right">Valid Rows</th>
+            <th class="py-3.5 px-4 text-right">Missing / Null</th>
+            <th class="py-3.5 px-4 text-right cursor-pointer hover:text-white" onclick={() => toggleSort("uniques")}>
               <div class="flex items-center justify-end gap-1.5">
                 <span>Distinct Uniques</span>
                 <ArrowUpDown class="w-3 h-3 text-slate-500" />
               </div>
             </th>
-            <th class="py-3 px-4">Sample Values</th>
-            <th class="py-3 px-4 text-center">Action</th>
+            <th class="py-3.5 px-4">Sample Values</th>
+            <th class="py-3.5 px-4 text-center">Action</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-800/60 font-mono text-slate-300">

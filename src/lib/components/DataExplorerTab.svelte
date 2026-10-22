@@ -28,7 +28,7 @@
           placeholder="Search records across all attributes... (Press Enter)"
           bind:value={searchInput}
           onkeydown={handleSearchKeydown}
-          class="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-8 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition"
+          class="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition shadow-sm font-mono"
         />
         {#if searchInput}
           <button
@@ -41,7 +41,7 @@
       </div>
       <button
         onclick={() => feedState.applySearch(searchInput)}
-        class="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 transition cursor-pointer"
+        class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition cursor-pointer shadow-md shadow-blue-600/20"
       >
         Filter
       </button>
@@ -50,7 +50,7 @@
     <!-- Pagination & Page Size -->
     <div class="flex items-center gap-3">
       <!-- Page Size Selector -->
-      <div class="flex items-center gap-1 text-xs text-slate-400">
+      <div class="flex items-center gap-1.5 text-xs text-slate-400">
         <span>Rows:</span>
         <select
           bind:value={feedState.pageSize}
@@ -58,7 +58,7 @@
             feedState.currentPage = 1;
             feedState.fetchTablePage();
           }}
-          class="bg-slate-900 border border-slate-800 text-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
+          class="bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-2.5 py-1 text-xs focus:outline-none focus:border-blue-500 font-mono"
         >
           <option value={25}>25</option>
           <option value={50}>50</option>
@@ -73,17 +73,17 @@
           <button
             onclick={() => feedState.setPage(feedState.currentPage - 1)}
             disabled={feedState.currentPage <= 1 || feedState.isLoadingTable}
-            class="p-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 transition cursor-pointer"
+            class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 transition cursor-pointer"
           >
             <ChevronLeft class="w-4 h-4" />
           </button>
-          <span>
+          <span class="px-2">
             {feedState.currentPage} / {feedState.tableData.total_pages}
           </span>
           <button
             onclick={() => feedState.setPage(feedState.currentPage + 1)}
             disabled={feedState.currentPage >= feedState.tableData.total_pages || feedState.isLoadingTable}
-            class="p-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 transition cursor-pointer"
+            class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 transition cursor-pointer"
           >
             <ChevronRight class="w-4 h-4" />
           </button>
@@ -93,7 +93,7 @@
   </div>
 
   <!-- Data Table Container -->
-  <div class="flex-1 bg-slate-900/70 border border-slate-800 rounded-xl overflow-hidden flex flex-col relative">
+  <div class="flex-1 data-card rounded-2xl overflow-hidden flex flex-col relative">
     {#if feedState.isLoadingTable}
       <div class="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px] z-20 flex items-center justify-center">
         <RefreshCw class="w-6 h-6 text-blue-400 animate-spin" />
@@ -102,7 +102,7 @@
 
     <div class="overflow-x-auto overflow-y-auto flex-1 isolate">
       <table class="w-full text-left text-xs border-collapse">
-        <thead class="bg-slate-950 sticky top-0 z-10 border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider text-[11px]">
+        <thead class="bg-slate-950 sticky top-0 z-10 border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-[10.5px]">
           <tr class="bg-slate-950">
             <th class="py-3 px-3 w-10 text-center text-slate-600 bg-slate-950">#</th>
             {#if feedState.tableData}

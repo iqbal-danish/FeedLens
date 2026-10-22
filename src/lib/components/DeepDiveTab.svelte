@@ -343,24 +343,24 @@
   <!-- Chart and Duplicates Section (Top) -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <!-- Value Distribution Chart -->
-    <div class="p-5 rounded-xl bg-slate-900/70 border border-slate-800 shadow-sm flex flex-col">
+    <div class="p-5 rounded-2xl data-card flex flex-col">
       <div class="flex items-center justify-between mb-3">
         <div>
-          <h3 class="text-sm font-bold text-white">Top Frequency Distribution</h3>
+          <h3 class="text-sm font-bold text-white tracking-tight">Top Frequency Distribution</h3>
           <p class="text-xs text-slate-400">Most frequent values and percentage share</p>
         </div>
         <!-- Chart type toggles -->
-        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
           <button
             onclick={() => (chartType = "bar")}
-            class="p-1 rounded {chartType === 'bar' ? 'bg-blue-950 text-blue-400 border border-blue-800/40' : 'text-slate-500 hover:text-slate-300'} transition cursor-pointer"
+            class="p-1.5 rounded-lg {chartType === 'bar' ? 'bg-blue-950 text-blue-400 border border-blue-800/40' : 'text-slate-500 hover:text-slate-300'} transition cursor-pointer"
             title="Horizontal Bar Chart"
           >
             <BarChart2 class="w-3.5 h-3.5" />
           </button>
           <button
             onclick={() => (chartType = "pie")}
-            class="p-1 rounded {chartType === 'pie' ? 'bg-blue-950 text-blue-400 border border-blue-800/40' : 'text-slate-500 hover:text-slate-300'} transition cursor-pointer"
+            class="p-1.5 rounded-lg {chartType === 'pie' ? 'bg-blue-950 text-blue-400 border border-blue-800/40' : 'text-slate-500 hover:text-slate-300'} transition cursor-pointer"
             title="Donut Chart"
           >
             <PieChart class="w-3.5 h-3.5" />
@@ -372,17 +372,17 @@
     </div>
 
     <!-- Duplicate / Collision Finder -->
-    <div class="p-5 rounded-xl bg-slate-900/70 border border-slate-800 shadow-sm flex flex-col">
+    <div class="p-5 rounded-2xl data-card flex flex-col">
       <div class="flex items-center justify-between mb-3">
         <div>
-          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+          <h3 class="text-sm font-bold text-white flex items-center gap-2 tracking-tight">
             <span>Collision & Duplicate Tracker</span>
             {#if feedState.duplicateEntries.length > 0}
-              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
                 {feedState.duplicateEntries.length} Collisions
               </span>
             {:else}
-              <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-950 text-blue-400 border border-blue-800/60">
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-blue-950 text-blue-400 border border-blue-800/60">
                 Unique
               </span>
             {/if}

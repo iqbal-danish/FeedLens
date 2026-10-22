@@ -216,16 +216,16 @@
 </script>
 
 <div class="p-6 space-y-5 overflow-y-auto h-full">
-  <!-- 1. SLEEK SINGLE-LINE HEADER BAR (Throughput removed as requested) -->
-  <div class="px-5 py-3 rounded-xl bg-slate-900/80 border border-slate-800 shadow-sm flex flex-wrap items-center justify-between gap-4">
+  <!-- 1. SLEEK SINGLE-LINE HEADER BAR (Clean Modern Numbers & Typography) -->
+  <div class="px-5 py-3.5 rounded-2xl data-card flex flex-wrap items-center justify-between gap-4">
     <!-- Metric 1: Total Records -->
     <div class="flex items-center gap-3">
       <div class="w-8 h-8 rounded-lg bg-blue-950/60 border border-blue-800/50 flex items-center justify-center text-blue-400">
         <Database class="w-4 h-4" />
       </div>
       <div>
-        <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total Records</div>
-        <div class="text-lg font-black text-white font-mono leading-tight">
+        <div class="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Total Records</div>
+        <div class="text-xl font-extrabold text-white font-num leading-tight">
           {totalRecords.toLocaleString()}
         </div>
       </div>
@@ -239,8 +239,8 @@
         <Layers class="w-4 h-4" />
       </div>
       <div>
-        <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Attributes</div>
-        <div class="text-lg font-black text-white font-mono leading-tight">
+        <div class="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Attributes</div>
+        <div class="text-xl font-extrabold text-white font-num leading-tight">
           {totalAttributes}
         </div>
       </div>
@@ -254,8 +254,8 @@
         <CheckCircle2 class="w-4 h-4" />
       </div>
       <div>
-        <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Avg Fill Rate</div>
-        <div class="text-lg font-black text-blue-400 font-mono leading-tight">
+        <div class="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Avg Fill Rate</div>
+        <div class="text-xl font-extrabold text-blue-400 font-num leading-tight">
           {averageFillRate().toFixed(1)}%
         </div>
       </div>
@@ -269,8 +269,8 @@
         <AlertTriangle class="w-4 h-4" />
       </div>
       <div>
-        <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Incomplete Fields</div>
-        <div class="text-lg font-black text-amber-400 font-mono leading-tight">
+        <div class="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Incomplete Fields</div>
+        <div class="text-xl font-extrabold text-amber-400 font-num leading-tight">
           {incompleteCols.length}
         </div>
       </div>
@@ -281,7 +281,7 @@
   <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
     
     <!-- LEFT SECTION (7 Cols / ~58% width): Field Details & Cards -->
-    <div class="lg:col-span-7 bg-slate-900/70 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col space-y-3.5">
+    <div class="lg:col-span-7 data-card rounded-2xl p-5 flex flex-col space-y-3.5">
       
       <!-- Controls Header: Category Sleek Bar + Sort Button -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
@@ -398,16 +398,16 @@
     <div class="lg:col-span-5 space-y-4">
       
       <!-- Main Donut / Pie Chart Card -->
-      <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col items-center relative overflow-hidden">
+      <div class="data-card rounded-2xl p-5 flex flex-col items-center relative overflow-hidden">
         <div class="w-full flex items-center justify-between mb-1">
           <div>
-            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <h3 class="text-sm font-bold text-white flex items-center gap-2 tracking-tight">
               <span class="w-2 h-2 rounded-full bg-blue-500"></span>
               Feed Health Distribution
             </h3>
             <p class="text-xs text-slate-400">Quality breakdown across {feedState.completeness.length} discovered attributes</p>
           </div>
-          <span class="text-[11px] font-mono text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/60">DuckDB Core</span>
+          <span class="text-[10px] font-mono text-slate-300 data-card-subtle px-2 py-0.5 rounded font-bold">DuckDB Core</span>
         </div>
 
         <!-- ECharts Donut Chart Container -->
@@ -420,13 +420,13 @@
           <!-- Complete -->
           <button 
             onclick={() => setFilter("complete")} 
-            class="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-blue-500/60 flex flex-col items-center transition cursor-pointer group"
+            class="p-2.5 rounded-xl data-card-subtle hover:border-blue-500/60 flex flex-col items-center transition cursor-pointer group"
           >
             <div class="flex items-center gap-1.5 mb-1">
               <span class="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50"></span>
               <span class="text-xs font-bold text-slate-200 group-hover:text-white">Complete</span>
             </div>
-            <span class="text-sm font-black text-blue-400 font-mono">
+            <span class="text-sm font-extrabold text-blue-400 font-num">
               {completeCols.length} 
               <span class="text-[10px] font-normal text-slate-500">
                 ({feedState.completeness.length > 0 ? ((completeCols.length / feedState.completeness.length) * 100).toFixed(0) : 0}%)
@@ -437,13 +437,13 @@
           <!-- Warning -->
           <button 
             onclick={() => setFilter("warning")} 
-            class="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-amber-500/60 flex flex-col items-center transition cursor-pointer group"
+            class="p-2.5 rounded-xl data-card-subtle hover:border-amber-500/60 flex flex-col items-center transition cursor-pointer group"
           >
             <div class="flex items-center gap-1.5 mb-1">
               <span class="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50"></span>
               <span class="text-xs font-bold text-slate-200 group-hover:text-white">Warning</span>
             </div>
-            <span class="text-sm font-black text-amber-400 font-mono">
+            <span class="text-sm font-extrabold text-amber-400 font-num">
               {warningCols.length} 
               <span class="text-[10px] font-normal text-slate-500">
                 ({feedState.completeness.length > 0 ? ((warningCols.length / feedState.completeness.length) * 100).toFixed(0) : 0}%)
@@ -454,13 +454,13 @@
           <!-- Critical -->
           <button 
             onclick={() => setFilter("critical")} 
-            class="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 hover:border-rose-500/60 flex flex-col items-center transition cursor-pointer group"
+            class="p-2.5 rounded-xl data-card-subtle hover:border-rose-500/60 flex flex-col items-center transition cursor-pointer group"
           >
             <div class="flex items-center gap-1.5 mb-1">
               <span class="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50"></span>
               <span class="text-xs font-bold text-slate-200 group-hover:text-white">Critical</span>
             </div>
-            <span class="text-sm font-black text-rose-400 font-mono">
+            <span class="text-sm font-extrabold text-rose-400 font-num">
               {criticalCols.length} 
               <span class="text-[10px] font-normal text-slate-500">
                 ({feedState.completeness.length > 0 ? ((criticalCols.length / feedState.completeness.length) * 100).toFixed(0) : 0}%)
@@ -471,7 +471,7 @@
       </div>
 
       <!-- Priority Attention Box (Lowest coverage fields) -->
-      <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 shadow-lg space-y-2.5">
+      <div class="data-card rounded-2xl p-4 space-y-2.5">
         <div class="flex items-center justify-between">
           <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
             <ShieldAlert class="w-4 h-4 text-rose-400" />

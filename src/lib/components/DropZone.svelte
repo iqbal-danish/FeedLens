@@ -101,11 +101,11 @@
     <!-- Main Two-Column Layout -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
       <!-- Left Column: Choose Source -->
-      <div class="lg:col-span-7 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-xl flex flex-col justify-between">
+      <div class="lg:col-span-7 data-card rounded-3xl p-6 shadow-xl flex flex-col justify-between">
         <div>
           <div class="flex items-center gap-2 mb-5 pb-3 border-b border-slate-800">
             <Layers class="w-5 h-5 text-blue-400" />
-            <h2 class="text-base font-bold text-white">Choose Source</h2>
+            <h2 class="text-base font-bold text-white tracking-tight">Choose Source</h2>
           </div>
 
           {#if feedState.lastError}
@@ -248,11 +248,11 @@
       </div>
 
       <!-- Right Column: Recent Analyzed Feeds -->
-      <div class="lg:col-span-5 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl backdrop-blur-xl flex flex-col">
+      <div class="lg:col-span-5 data-card rounded-3xl p-6 shadow-xl flex flex-col">
         <div class="flex items-center justify-between mb-5 pb-3 border-b border-slate-800">
           <div class="flex items-center gap-2">
             <Clock class="w-5 h-5 text-slate-400" />
-            <h2 class="text-base font-bold text-white">Recent Analyzed Feeds</h2>
+            <h2 class="text-base font-bold text-white tracking-tight">Recent Analyzed Feeds</h2>
           </div>
           <span class="text-[11px] font-mono text-slate-400 px-2 py-0.5 rounded-full bg-slate-800">
             {feedState.recentFeeds.length}

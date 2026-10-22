@@ -25,12 +25,12 @@
 </script>
 
 {#if feedState.inspectingRecord}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150">
-    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-150">
+    <div class="glass-modal-panel rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden border border-white/15">
       <!-- Modal Header -->
-      <div class="px-6 py-4 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/50">
+      <div class="px-6 py-4 border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/[0.02]">
         <div>
-          <h3 class="text-sm font-bold text-white">Record Details Inspector</h3>
+          <h3 class="text-sm font-bold text-white tracking-tight">Record Details Inspector</h3>
           <p class="text-xs text-slate-400">Inspecting all field values for this feed record</p>
         </div>
         
