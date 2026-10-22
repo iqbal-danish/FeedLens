@@ -10,6 +10,13 @@ import type {
   QueryResultPage,
   RecentFeed,
 } from "./types";
+import {
+  mockStats,
+  mockCompleteness,
+  mockDistribution,
+  mockDuplicates,
+  mockTablePage,
+} from "./mockData";
 
 export class FeedLensState {
   currentFile = $state<SelectedFileInfo | null>(null);
@@ -47,8 +54,29 @@ export class FeedLensState {
   lastError = $state<string | null>(null);
 
   constructor() {
+    if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
+      this.initMockMode();
+      return;
+    }
     this.setupListeners();
     this.fetchRecentFeeds();
+  }
+
+  initMockMode() {
+    this.currentFile = {
+      path: "/mock/jobs.xml",
+      filename: "jobs.xml",
+      size_bytes: 4200000,
+      format: "XML",
+    };
+    this.stats = mockStats;
+    this.completeness = mockCompleteness;
+    this.hasActiveDataset = true;
+    this.activeTab = "overview";
+    this.selectedColumn = "job_title";
+    this.columnDistribution = mockDistribution;
+    this.duplicateEntries = mockDuplicates;
+    this.tableData = mockTablePage;
   }
 
   clearError() {
@@ -235,6 +263,10 @@ export class FeedLensState {
   }
 
   async fetchTablePage() {
+    if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
+      this.tableData = mockTablePage;
+      return;
+    }
     this.isLoadingTable = true;
     try {
       const page = await invoke<QueryResultPage>("query_records", {
@@ -278,6 +310,11 @@ export class FeedLensState {
 
   async fetchDeepDive(colName: string) {
     this.selectedColumn = colName;
+    if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
+      this.columnDistribution = mockDistribution;
+      this.duplicateEntries = mockDuplicates;
+      return;
+    }
     this.isLoadingDeepDive = true;
     try {
       const [dist, dups] = await Promise.all([
