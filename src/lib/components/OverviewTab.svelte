@@ -208,14 +208,23 @@
   onMount(() => {
     const handleResize = () => chartInstance?.resize();
     window.addEventListener("resize", handleResize);
+
+    const resizeObserver = new ResizeObserver(() => {
+      chartInstance?.resize();
+    });
+    if (chartContainer) {
+      resizeObserver.observe(chartContainer);
+    }
+
     return () => {
       window.removeEventListener("resize", handleResize);
+      resizeObserver.disconnect();
       chartInstance?.dispose();
     };
   });
 </script>
 
-<div class="p-6 space-y-6 overflow-y-auto h-full max-w-7xl mx-auto w-full">
+<div class="p-6 space-y-6 overflow-y-auto h-full w-full">
   <!-- 1. FOUR TOP KPI CARDS (Matches Hybrid Mockup Exactly) -->
   <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
     <!-- KPI 1 -->
