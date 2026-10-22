@@ -22,9 +22,16 @@
       k.toLowerCase().includes(q) || (v && String(v).toLowerCase().includes(q))
     );
   });
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && feedState.inspectingRecord) {
+      feedState.inspectingRecord = null;
+    }
+  }
 </script>
 
-{#if feedState.inspectingRecord}
+<svelte:window onkeydown={handleKeydown} />
+
+{#if feedState.inspectingRecord && feedState.activeTab !== 'explorer'}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-150">
     <div class="glass-modal-panel rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden border border-white/15">
       <!-- Modal Header -->

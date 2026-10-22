@@ -27,6 +27,42 @@ pub fn run() {
                 if let Ok(icon) = tauri::image::Image::from_bytes(icon_bytes) {
                     let _ = window.set_icon(icon);
                 }
+
+                #[cfg(target_os = "windows")]
+                {
+                    if let Ok(hwnd) = window.hwnd() {
+                        #[link(name = "dwmapi")]
+                        extern "system" {
+                            fn DwmSetWindowAttribute(
+                                hwnd: isize,
+                                dw_attribute: u32,
+                                pv_attribute: *const std::ffi::c_void,
+                                cb_attribute: u32,
+                            ) -> i32;
+                        }
+                        unsafe {
+                            // DWMWA_CAPTION_COLOR = 35 (Windows 11 build 22000+)
+                            // COLORREF 0x00BBGGRR for #0b101c -> 0x001C100B
+                            let caption_color: u32 = 0x001C100B;
+                            let _ = DwmSetWindowAttribute(
+                                hwnd.0 as isize,
+                                35,
+                                &caption_color as *const _ as *const std::ffi::c_void,
+                                std::mem::size_of::<u32>() as u32,
+                            );
+
+                            // DWMWA_TEXT_COLOR = 36
+                            // COLORREF 0x00BBGGRR for #f1f5f9 -> 0x00F9F5F1
+                            let text_color: u32 = 0x00F9F5F1;
+                            let _ = DwmSetWindowAttribute(
+                                hwnd.0 as isize,
+                                36,
+                                &text_color as *const _ as *const std::ffi::c_void,
+                                std::mem::size_of::<u32>() as u32,
+                            );
+                        }
+                    }
+                }
             }
             Ok(())
         })
@@ -53,6 +89,9 @@ pub fn run() {
             commands::query_records,
             commands::export_records,
             commands::get_cli_file,
+            commands::window_minimize,
+            commands::window_toggle_maximize,
+            commands::window_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

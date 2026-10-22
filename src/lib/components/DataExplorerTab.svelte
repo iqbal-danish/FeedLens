@@ -1,8 +1,25 @@
 <script lang="ts">
   import { feedState } from "$lib/state.svelte";
-  import { Search, ArrowUpDown, ChevronLeft, ChevronRight, Eye, RefreshCw } from "@lucide/svelte";
+  import {
+    Search,
+    ArrowUpDown,
+    ChevronLeft,
+    ChevronRight,
+    Eye,
+    RefreshCw,
+    X,
+    Copy,
+    Check,
+    RotateCcw,
+    Sparkles,
+  } from "@lucide/svelte";
 
   let searchInput = $state(feedState.searchFilter);
+  let fieldFilterQuery = $state("");
+  let copiedKey = $state<string | null>(null);
+
+  // Column prioritization: Populated first is always turned on by default
+  let orderColumnsByFill = $state(true);
 
   function handleSearchKeydown(e: KeyboardEvent) {
     if (e.key === "Enter") {
@@ -14,41 +31,172 @@
     searchInput = "";
     feedState.applySearch("");
   }
+
+  // Lookup map of column fill rates from DuckDB completeness analysis
+  let columnFillRates = $derived(() => {
+    const map = new Map<string, number>();
+    for (const c of feedState.completeness) {
+      map.set(c.column_name.toLowerCase(), c.fill_rate);
+      map.set(c.original_name.toLowerCase(), c.fill_rate);
+    }
+    return map;
+  });
+
+  // Count of columns that are 100% empty (fill_rate < 0.1%)
+  let emptyColumnsCount = $derived(() => {
+    if (!feedState.tableData) return 0;
+    const rates = columnFillRates();
+    return feedState.tableData.columns.filter((col) => {
+      const rate = rates.get(col.toLowerCase());
+      return rate !== undefined && rate < 0.1;
+    }).length;
+  });
+
+  // Filtered & ordered visible columns list (populated first)
+  let visibleColumns = $derived(() => {
+    if (!feedState.tableData) return [];
+    let cols = [...feedState.tableData.columns];
+    const rates = columnFillRates();
+
+    // Sort by fill rate descending so 100% full columns appear on the left
+    if (orderColumnsByFill) {
+      cols.sort((a, b) => {
+        const rateA = rates.get(a.toLowerCase()) ?? 50;
+        const rateB = rates.get(b.toLowerCase()) ?? 50;
+        return rateB - rateA;
+      });
+    }
+
+    return cols;
+  });
+
+  // Row-level health calculation for the currently selected record
+  let selectedRowHealth = $derived(() => {
+    if (!feedState.inspectingRecord) return { rate: 0, populated: 0, total: 0 };
+    const keys = Object.keys(feedState.inspectingRecord);
+    const populated = keys.filter((k) => {
+      const val = feedState.inspectingRecord![k];
+      return val !== null && val !== undefined && String(val).trim() !== "";
+    }).length;
+    const rate = keys.length > 0 ? (populated / keys.length) * 100 : 0;
+    return { rate, populated, total: keys.length };
+  });
+
+  // Filtered fields inside the sidecar inspector drawer
+  let filteredInspectorFields = $derived(() => {
+    if (!feedState.inspectingRecord) return [];
+    const entries = Object.entries(feedState.inspectingRecord);
+    if (!fieldFilterQuery.trim()) return entries;
+    const q = fieldFilterQuery.toLowerCase();
+    return entries.filter(([k, v]) =>
+      k.toLowerCase().includes(q) || (v && String(v).toLowerCase().includes(q))
+    );
+  });
+
+  // Currently selected row index
+  let currentRowIndex = $derived(() => {
+    if (!feedState.tableData || !feedState.inspectingRecord) return -1;
+    return feedState.tableData.rows.indexOf(feedState.inspectingRecord);
+  });
+
+  function selectPreviousRow() {
+    if (!feedState.tableData || !feedState.inspectingRecord) return;
+    const idx = currentRowIndex();
+    if (idx > 0) {
+      feedState.inspectingRecord = feedState.tableData.rows[idx - 1];
+    }
+  }
+
+  function selectNextRow() {
+    if (!feedState.tableData || !feedState.inspectingRecord) return;
+    const idx = currentRowIndex();
+    if (idx >= 0 && idx < feedState.tableData.rows.length - 1) {
+      feedState.inspectingRecord = feedState.tableData.rows[idx + 1];
+    }
+  }
+
+  function copyValue(key: string, val: string) {
+    navigator.clipboard.writeText(val);
+    copiedKey = key;
+    setTimeout(() => {
+      if (copiedKey === key) copiedKey = null;
+    }, 2000);
+  }
+
+  function copyRecordJson() {
+    if (!feedState.inspectingRecord) return;
+    navigator.clipboard.writeText(JSON.stringify(feedState.inspectingRecord, null, 2));
+    feedState.showToast("Copied full record JSON to clipboard!");
+  }
+
+  function closeInspector() {
+    feedState.inspectingRecord = null;
+  }
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && feedState.inspectingRecord) {
+      closeInspector();
+    }
+  }
 </script>
 
-<div class="p-6 h-full flex flex-col space-y-4 max-w-7xl mx-auto w-full">
+<svelte:window onkeydown={handleWindowKeydown} />
+
+<div class="p-6 h-full flex flex-col space-y-4 w-full font-sans select-none">
   <!-- Controls Bar -->
-  <div class="flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-    <!-- Search Box -->
-    <div class="flex items-center gap-2 max-w-md w-full">
-      <div class="relative flex-1">
-        <Search class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+  <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 shrink-0">
+    
+    <!-- Left Controls: Search Box + Clear Filter Button + Space Saver Toggles -->
+    <div class="flex items-center gap-2.5 flex-wrap flex-1">
+      <!-- Search Input -->
+      <div class="relative w-72 sm:w-80">
+        <Search class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         <input
           type="text"
-          placeholder="Search records across all attributes... (Press Enter)"
+          placeholder="Search records... (Press Enter)"
           bind:value={searchInput}
           onkeydown={handleSearchKeydown}
-          class="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-9 pr-8 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition shadow-sm font-mono"
+          class="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-9 pr-14 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition shadow-sm font-sans"
         />
-        {#if searchInput}
-          <button
-            onclick={handleSearchClear}
-            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs cursor-pointer"
-          >
-            ✕
-          </button>
-        {/if}
+        <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-mono text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700 pointer-events-none">
+          ↵
+        </span>
       </div>
+
+      <!-- Filter Button -->
       <button
         onclick={() => feedState.applySearch(searchInput)}
-        class="px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition cursor-pointer shadow-md shadow-blue-600/20"
+        class="px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition cursor-pointer shadow-md shadow-blue-600/20 shrink-0"
       >
         Filter
       </button>
+
+      <!-- Clear Filter Button (Requested by User) -->
+      {#if searchInput || feedState.searchFilter}
+        <button
+          onclick={handleSearchClear}
+          class="px-3 py-2 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 transition cursor-pointer flex items-center gap-1.5 shrink-0"
+          title="Clear search filter and show all records"
+        >
+          <X class="w-3.5 h-3.5" />
+          <span>Clear Filter</span>
+        </button>
+      {/if}
+
+      <!-- Column Order: Populated First Toggle (Always ON on landing) -->
+      <button
+        onclick={() => (orderColumnsByFill = !orderColumnsByFill)}
+        class="px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 border shrink-0 {orderColumnsByFill
+          ? 'bg-blue-500/15 border-blue-500/35 text-blue-300'
+          : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'}"
+        title="Sort columns by fill rate so 100% populated fields appear on the left"
+      >
+        <span>Populated First</span>
+      </button>
     </div>
 
-    <!-- Pagination & Page Size -->
-    <div class="flex items-center gap-3">
+    <!-- Right Controls: Rows Per Page & Segmented Pagination -->
+    <div class="flex items-center gap-3 shrink-0">
       <!-- Page Size Selector -->
       <div class="flex items-center gap-1.5 text-xs text-slate-400">
         <span>Rows:</span>
@@ -67,48 +215,52 @@
         </select>
       </div>
 
-      <!-- Pagination Buttons -->
+      <!-- Pagination Segmented Controls -->
       {#if feedState.tableData}
-        <div class="flex items-center gap-1.5 text-xs font-mono text-slate-300">
+        <div class="flex items-center gap-1 bg-slate-900/90 border border-slate-800 rounded-xl p-1 text-xs font-mono text-slate-300">
           <button
             onclick={() => feedState.setPage(feedState.currentPage - 1)}
             disabled={feedState.currentPage <= 1 || feedState.isLoadingTable}
-            class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 transition cursor-pointer"
+            class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 transition cursor-pointer"
+            title="Previous page"
           >
-            <ChevronLeft class="w-4 h-4" />
+            <ChevronLeft class="w-3.5 h-3.5" />
           </button>
-          <span class="px-2">
+          <span class="px-2 text-white font-bold">
             {feedState.currentPage} / {feedState.tableData.total_pages}
           </span>
           <button
             onclick={() => feedState.setPage(feedState.currentPage + 1)}
             disabled={feedState.currentPage >= feedState.tableData.total_pages || feedState.isLoadingTable}
-            class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:hover:bg-slate-800 transition cursor-pointer"
+            class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 transition cursor-pointer"
+            title="Next page"
           >
-            <ChevronRight class="w-4 h-4" />
+            <ChevronRight class="w-3.5 h-3.5" />
           </button>
         </div>
       {/if}
     </div>
   </div>
 
-  <!-- Data Table Container -->
-  <div class="flex-1 data-card rounded-2xl overflow-hidden flex flex-col relative">
-    {#if feedState.isLoadingTable}
-      <div class="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px] z-20 flex items-center justify-center">
-        <RefreshCw class="w-6 h-6 text-blue-400 animate-spin" />
-      </div>
-    {/if}
+  <!-- Master-Detail Workspace: Table on Left + Sliding Inspector Drawer on Right -->
+  <div class="flex-1 flex gap-4 overflow-hidden relative">
+    
+    <!-- Left Table Container -->
+    <div class="flex-1 data-card rounded-2xl overflow-hidden flex flex-col relative transition-all duration-300">
+      {#if feedState.isLoadingTable}
+        <div class="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px] z-20 flex items-center justify-center">
+          <RefreshCw class="w-6 h-6 text-blue-400 animate-spin" />
+        </div>
+      {/if}
 
-    <div class="overflow-x-auto overflow-y-auto flex-1 isolate">
-      <table class="w-full text-left text-xs border-collapse">
-        <thead class="bg-slate-950 sticky top-0 z-10 border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-[10.5px]">
-          <tr class="bg-slate-950">
-            <th class="py-3 px-3 w-10 text-center text-slate-600 bg-slate-950">#</th>
-            {#if feedState.tableData}
-              {#each feedState.tableData.columns as col}
+      <div class="overflow-x-auto overflow-y-auto flex-1 isolate">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="bg-slate-950/95 sticky top-0 z-10 border-b border-slate-800 text-slate-300 font-bold uppercase tracking-wider text-[10.5px] backdrop-blur-md">
+            <tr>
+              <th class="py-3 px-3 w-12 text-center text-slate-500 bg-slate-950/95 font-mono">#</th>
+              {#each visibleColumns() as col}
                 <th
-                  class="py-3 px-3 cursor-pointer hover:text-white whitespace-nowrap bg-slate-950"
+                  class="py-3 px-3.5 cursor-pointer hover:text-white whitespace-nowrap bg-slate-950/95 font-sans"
                   onclick={() => feedState.setSort(col)}
                 >
                   <div class="flex items-center gap-1.5">
@@ -117,54 +269,210 @@
                   </div>
                 </th>
               {/each}
-            {/if}
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-800/60 font-mono text-slate-300">
-          {#if feedState.tableData && feedState.tableData.rows.length > 0}
-            {#each feedState.tableData.rows as row, idx}
-              <tr
-                onclick={() => (feedState.inspectingRecord = row)}
-                class="hover:bg-slate-800/60 transition cursor-pointer group"
-              >
-                <!-- Row index -->
-                <td class="py-2.5 px-3 text-center text-slate-600 font-mono text-[10px] group-hover:text-blue-400">
-                  {(feedState.currentPage - 1) * feedState.pageSize + idx + 1}
-                </td>
-                <!-- Columns -->
-                {#each feedState.tableData.columns as col}
-                  <td class="py-2.5 px-3 max-w-[240px] truncate">
-                    {#if row[col] === null || row[col] === undefined || row[col] === ""}
-                      <span class="text-slate-600 italic font-sans text-[11px]">-</span>
-                    {:else}
-                      <span title={row[col]}>{row[col]}</span>
-                    {/if}
-                  </td>
-                {/each}
-              </tr>
-            {/each}
-          {:else}
-            <tr>
-              <td colspan={100} class="py-12 text-center text-slate-500 italic">
-                No matching records found.
-              </td>
             </tr>
-          {/if}
-        </tbody>
-      </table>
+          </thead>
+          <tbody class="divide-y divide-slate-800/60 text-slate-300 font-sans">
+            {#if feedState.tableData && feedState.tableData.rows.length > 0}
+              {#each feedState.tableData.rows as row, idx}
+                {@const isSelected = feedState.inspectingRecord === row}
+                <tr
+                  onclick={() => (feedState.inspectingRecord = row)}
+                  class="transition cursor-pointer group {isSelected
+                    ? 'bg-blue-600/15 border-l-2 border-l-blue-500'
+                    : 'hover:bg-slate-800/40'}"
+                >
+                  <!-- Row index -->
+                  <td class="py-2.5 px-3 text-center text-[11px] font-mono {isSelected ? 'text-blue-400 font-bold' : 'text-slate-500 group-hover:text-blue-400'}">
+                    {(feedState.currentPage - 1) * feedState.pageSize + idx + 1}
+                  </td>
+                  
+                  <!-- Visible Columns -->
+                  {#each visibleColumns() as col}
+                    {@const val = row[col]}
+                    <td class="py-2.5 px-3.5 max-w-[280px] truncate text-xs font-sans">
+                      {#if val === null || val === undefined || String(val).trim() === ""}
+                        <span class="text-slate-600 italic text-[11px] font-mono">—</span>
+                      {:else if val === "false" || val === false}
+                        <span class="px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 text-slate-400 text-[10px] font-mono">
+                          false
+                        </span>
+                      {:else if val === "true" || val === true}
+                        <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold">
+                          true
+                        </span>
+                      {:else if String(val).startsWith("http://") || String(val).startsWith("https://")}
+                        <span class="text-cyan-400 hover:underline truncate font-mono text-[11px]" title={val}>{val}</span>
+                      {:else}
+                        <span class="text-slate-200 font-sans" title={val}>{val}</span>
+                      {/if}
+                    </td>
+                  {/each}
+                </tr>
+              {/each}
+            {:else}
+              <tr>
+                <td colspan={100} class="py-12 text-center text-slate-500 italic">
+                  No matching records found.
+                </td>
+              </tr>
+            {/if}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Footer with Matching Count -->
+      <div class="px-4 py-2.5 bg-slate-950/90 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 shrink-0 font-sans">
+        <div class="flex items-center gap-2">
+          <Eye class="w-3.5 h-3.5 text-blue-400" />
+          <span class="hidden sm:inline">Click any row to inspect all fields in the sidecar drawer</span>
+          <span class="sm:hidden">Click row to inspect</span>
+        </div>
+        {#if feedState.tableData}
+          <div class="font-mono flex items-center gap-2 text-xs">
+            <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+            <span>Total Matching: <strong class="text-white font-bold">{feedState.tableData.total_records.toLocaleString()}</strong> records</span>
+          </div>
+        {/if}
+      </div>
     </div>
 
-    <!-- Table Footer with Matching Count -->
-    <div class="px-4 py-2 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-      <div class="flex items-center gap-2">
-        <Eye class="w-3.5 h-3.5 text-blue-400" />
-        <span>Click any row to inspect all fields</span>
-      </div>
-      {#if feedState.tableData}
-        <div class="font-mono">
-          Total Matching: <span class="text-white font-bold">{feedState.tableData.total_records.toLocaleString()}</span> records
+    <!-- Right: Sliding Frosted Glass Inspector Drawer (Sidecar) -->
+    {#if feedState.inspectingRecord}
+      <div class="w-80 lg:w-96 glass-modal-panel rounded-2xl flex flex-col overflow-hidden shadow-2xl border border-white/15 animate-in slide-in-from-right-4 duration-200 shrink-0 font-sans">
+        <!-- Drawer Header -->
+        <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+          <div class="flex items-center gap-2">
+            <span class="text-base">🔎</span>
+            <div>
+              <h3 class="text-xs font-bold text-white tracking-tight leading-tight">
+                Record Inspector #{currentRowIndex() >= 0 ? (feedState.currentPage - 1) * feedState.pageSize + currentRowIndex() + 1 : ""}
+              </h3>
+              <p class="text-[10px] text-slate-400">Full field attribute breakdown</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="text-[9px] font-mono text-slate-400 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded select-none">
+              Esc
+            </span>
+            <button
+              onclick={closeInspector}
+              class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+              title="Close Drawer (Esc)"
+            >
+              <X class="w-4 h-4" />
+            </button>
+          </div>
         </div>
-      {/if}
-    </div>
+
+        <!-- Row Quality Health Score Banner -->
+        <div class="px-4 py-2.5 bg-white/[0.03] border-b border-white/10 flex items-center justify-between text-xs font-sans">
+          <span class="text-slate-400 text-[11px]">Row Quality:</span>
+          <div class="flex items-center gap-2">
+            <div class="w-16 bg-slate-800 h-1.5 rounded-full overflow-hidden">
+              <div
+                class="h-full rounded-full {selectedRowHealth().rate >= 90 ? 'bg-emerald-500' : selectedRowHealth().rate >= 50 ? 'bg-amber-500' : 'bg-rose-500'}"
+                style="width: {selectedRowHealth().rate}%"
+              ></div>
+            </div>
+            <span class="font-mono text-xs font-bold {selectedRowHealth().rate >= 90 ? 'text-emerald-400' : selectedRowHealth().rate >= 50 ? 'text-amber-400' : 'text-rose-400'}">
+              {selectedRowHealth().rate.toFixed(0)}%
+            </span>
+          </div>
+        </div>
+
+        <!-- Quick Field Search Filter -->
+        <div class="p-3 border-b border-white/10 bg-white/[0.01]">
+          <div class="relative">
+            <Search class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search record attributes..."
+              bind:value={fieldFilterQuery}
+              class="w-full bg-slate-950/80 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 font-sans transition"
+            />
+          </div>
+        </div>
+
+        <!-- Scrollable Fields List with Modern Typography -->
+        <div class="flex-1 overflow-y-auto p-3 space-y-2 font-sans text-xs">
+          {#if filteredInspectorFields().length === 0}
+            <div class="py-8 text-center text-xs text-slate-500">
+              No fields matching "{fieldFilterQuery}"
+            </div>
+          {:else}
+            {#each filteredInspectorFields() as [key, value]}
+              {@const isPopulated = value !== null && value !== undefined && String(value).trim() !== ""}
+              <div class="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 hover:border-slate-700 transition flex flex-col gap-1 group">
+                <div class="flex items-center justify-between text-[10.5px]">
+                  <span class="font-bold {isPopulated ? 'text-blue-400' : 'text-slate-500'} truncate max-w-[200px]" title={key}>
+                    {key}
+                  </span>
+                  {#if isPopulated}
+                    <button
+                      onclick={() => copyValue(key, String(value))}
+                      class="text-slate-500 hover:text-white transition cursor-pointer p-0.5"
+                      title="Copy value"
+                    >
+                      {#if copiedKey === key}
+                        <Check class="w-3 h-3 text-emerald-400" />
+                      {:else}
+                        <Copy class="w-3 h-3" />
+                      {/if}
+                    </button>
+                  {:else}
+                    <span class="text-rose-400/80 text-[9px] font-bold font-mono">EMPTY</span>
+                  {/if}
+                </div>
+
+                <div class="text-xs break-all select-all font-sans">
+                  {#if isPopulated}
+                    {#if String(value).startsWith("http")}
+                      <a href={value} target="_blank" rel="noreferrer" class="text-cyan-400 hover:underline font-mono text-[11px]">
+                        {value}
+                      </a>
+                    {:else}
+                      <span class="text-slate-200">{value}</span>
+                    {/if}
+                  {:else}
+                    <span class="text-slate-600 italic font-mono text-[10px]">null</span>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          {/if}
+        </div>
+
+        <!-- Drawer Footer: Prev / Next / Copy JSON -->
+        <div class="p-3 border-t border-white/10 bg-white/[0.02] flex items-center justify-between gap-2 font-sans">
+          <div class="flex items-center gap-1 font-mono text-xs">
+            <button
+              onclick={selectPreviousRow}
+              disabled={currentRowIndex() <= 0}
+              class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 text-slate-200 transition cursor-pointer text-xs"
+              title="Previous record in table"
+            >
+              ‹ Prev
+            </button>
+            <button
+              onclick={selectNextRow}
+              disabled={!feedState.tableData || currentRowIndex() >= feedState.tableData.rows.length - 1}
+              class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 text-slate-200 transition cursor-pointer text-xs"
+              title="Next record in table"
+            >
+              Next ›
+            </button>
+          </div>
+
+          <button
+            onclick={copyRecordJson}
+            class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shadow-sm font-sans"
+          >
+            <Copy class="w-3 h-3" />
+            <span>Copy JSON</span>
+          </button>
+        </div>
+      </div>
+    {/if}
+
   </div>
 </div>
