@@ -39,30 +39,30 @@
       <!-- Empty State / Landing Dropzone -->
       <DropZone />
     {:else}
-      <!-- Tab Navigation Bar (Frosted Glass Floating Chrome) -->
-      <div class="h-11 glass-chrome px-6 flex items-center justify-between shrink-0 select-none z-20">
-        <div class="flex items-center gap-1.5 h-full">
+      <!-- FROSTED GLASS TAB BAR (Sticky Floating Chrome) -->
+      <div class="glass-chrome h-12 px-6 flex items-center justify-between z-30 shrink-0 select-none">
+        <div class="flex items-center gap-2 h-full">
           <!-- Overview Tab -->
           <button
             onclick={() => (feedState.activeTab = "overview")}
-            class="h-full px-4 flex items-center gap-2 text-xs font-bold border-b-2 transition cursor-pointer {feedState.activeTab === 'overview'
-              ? 'border-blue-400 text-blue-400 bg-blue-500/10'
-              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/5'}"
+            class="h-9 px-4 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer {feedState.activeTab === 'overview'
+              ? 'tab-active'
+              : 'text-slate-400 hover:text-white hover:bg-white/5'}"
           >
-            <LayoutDashboard class="w-3.5 h-3.5" />
-            <span class="tracking-tight">Overview & Health</span>
+            <LayoutDashboard class="w-3.5 h-3.5 text-blue-400" />
+            <span>Overview & Health</span>
           </button>
 
           <!-- Completeness Matrix Tab -->
           <button
             onclick={() => (feedState.activeTab = "completeness")}
-            class="h-full px-4 flex items-center gap-2 text-xs font-bold border-b-2 transition cursor-pointer {feedState.activeTab === 'completeness'
-              ? 'border-blue-400 text-blue-400 bg-blue-500/10'
-              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/5'}"
+            class="h-9 px-4 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer {feedState.activeTab === 'completeness'
+              ? 'tab-active'
+              : 'text-slate-400 hover:text-white hover:bg-white/5'}"
           >
-            <TableProperties class="w-3.5 h-3.5" />
-            <span class="tracking-tight">Completeness Matrix</span>
-            <span class="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-slate-800/90 text-slate-300 border border-slate-700">
+            <TableProperties class="w-3.5 h-3.5 text-blue-400" />
+            <span>Completeness Matrix</span>
+            <span class="tabular-tag px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
               {feedState.completeness.length}
             </span>
           </button>
@@ -70,25 +70,32 @@
           <!-- Data Explorer Tab -->
           <button
             onclick={() => (feedState.activeTab = "explorer")}
-            class="h-full px-4 flex items-center gap-2 text-xs font-bold border-b-2 transition cursor-pointer {feedState.activeTab === 'explorer'
-              ? 'border-blue-400 text-blue-400 bg-blue-500/10'
-              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/5'}"
+            class="h-9 px-4 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer {feedState.activeTab === 'explorer'
+              ? 'tab-active'
+              : 'text-slate-400 hover:text-white hover:bg-white/5'}"
           >
-            <Database class="w-3.5 h-3.5" />
-            <span class="tracking-tight">Data Explorer</span>
+            <Database class="w-3.5 h-3.5 text-blue-400" />
+            <span>Data Explorer</span>
           </button>
 
           <!-- Deep Dive Tab -->
           <button
             onclick={() => (feedState.activeTab = "deepdive")}
-            class="h-full px-4 flex items-center gap-2 text-xs font-bold border-b-2 transition cursor-pointer {feedState.activeTab === 'deepdive'
-              ? 'border-blue-400 text-blue-400 bg-blue-500/10'
-              : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-white/5'}"
+            class="h-9 px-4 rounded-xl flex items-center gap-2 text-xs font-bold transition cursor-pointer {feedState.activeTab === 'deepdive'
+              ? 'tab-active'
+              : 'text-slate-400 hover:text-white hover:bg-white/5'}"
           >
-            <BarChart3 class="w-3.5 h-3.5" />
-            <span class="tracking-tight">Deep Dive & Distribution</span>
+            <BarChart3 class="w-3.5 h-3.5 text-blue-400" />
+            <span>Deep Dive & Distribution</span>
           </button>
         </div>
+
+        {#if feedState.stats}
+          <div class="text-xs text-slate-400 tabular-tag flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+            <span>{feedState.stats.total_records.toLocaleString()} rows loaded</span>
+          </div>
+        {/if}
       </div>
 
       <!-- Tab Content Area -->

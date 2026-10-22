@@ -11,16 +11,18 @@
   }
 </script>
 
-<header class="h-14 glass-chrome px-4 flex items-center justify-between select-none z-30 shrink-0">
+<header class="h-14 glass-chrome px-6 flex items-center justify-between select-none z-30 shrink-0">
   <!-- Brand & Logo -->
-  <div class="flex items-center gap-3">
-    <div class="flex items-center gap-2.5">
-      <img src="/app-logo.png" alt="FeedLens Logo" class="w-8 h-8 rounded-lg shadow-md object-contain border border-white/10" />
+  <div class="flex items-center gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white font-black text-xs border border-white/20 shrink-0">
+        FL
+      </div>
       <div>
         <div class="flex items-center gap-2">
           <span class="font-extrabold text-base tracking-tight text-white">FeedLens</span>
-          <span class="text-[10px] font-mono uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-blue-950/80 text-blue-400 border border-blue-800/50">
-            DuckDB Core
+          <span class="text-[10px] font-mono uppercase tracking-wider font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30">
+            DUCKDB CORE
           </span>
         </div>
         <p class="text-[11px] text-slate-400 -mt-0.5 font-medium">High-Performance Feed Analytics</p>
@@ -29,20 +31,20 @@
 
     <!-- Active File Badge -->
     {#if feedState.currentFile}
-      <div class="h-5 w-px bg-slate-800 mx-2 hidden sm:block"></div>
-      <div class="hidden sm:flex items-center gap-2 bg-slate-800/80 border border-slate-700/60 rounded-lg px-2.5 py-1 text-xs text-slate-300">
+      <div class="h-5 w-px bg-slate-800 mx-1 hidden sm:block"></div>
+      <div class="hidden sm:flex items-center gap-2.5 bg-slate-800/80 border border-slate-700/60 rounded-xl px-3 py-1 text-xs">
         <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span class="font-medium max-w-[220px] truncate" title={feedState.currentFile.filename}>
+        <span class="tabular-tag text-slate-200 font-semibold max-w-[220px] truncate" title={feedState.currentFile.filename}>
           {feedState.currentFile.filename}
         </span>
         {#if feedState.currentFile.size_bytes > 0}
           <span class="text-slate-600">|</span>
-          <span class="text-slate-300 font-mono text-[11px] font-semibold">
+          <span class="tabular-tag text-cyan-300 font-bold">
             {formatBytes(feedState.currentFile.size_bytes)}
           </span>
         {/if}
-        <span class="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold uppercase bg-slate-700/90 text-slate-200">
-          {feedState.currentFile.format}
+        <span class="tabular-tag px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-700 text-slate-200 uppercase">
+          {feedState.stats?.total_records ? `${feedState.stats.total_records.toLocaleString()} JOBS` : feedState.currentFile.format}
         </span>
       </div>
     {/if}
@@ -54,11 +56,11 @@
       <!-- Back to Feeds Landing -->
       <button
         onclick={() => feedState.resetToLanding()}
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 bg-slate-800/80 hover:bg-slate-750 hover:text-white border border-slate-700 transition cursor-pointer"
+        class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800/80 hover:bg-slate-700 hover:text-white border border-slate-700 transition cursor-pointer"
         title="Return to Feeds Home & Ingestion"
       >
         <ArrowLeft class="w-3.5 h-3.5 text-blue-400" />
-        <span>Feeds Home</span>
+        <span>Return Home</span>
       </button>
     {/if}
 
@@ -66,7 +68,7 @@
     <button
       onclick={() => feedState.openFile()}
       disabled={feedState.isIngesting}
-      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition shadow-sm disabled:opacity-50 cursor-pointer border border-blue-400/30"
+      class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-md shadow-blue-600/20 border border-blue-400/30 transition disabled:opacity-50 cursor-pointer"
     >
       <FileUp class="w-3.5 h-3.5 text-white" />
       <span>New Feed</span>
@@ -78,7 +80,7 @@
       <button
         onclick={() => feedState.exportData(false)}
         title="Export full filtered table to CSV"
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-200 bg-slate-800/80 hover:bg-slate-700 hover:text-white border border-slate-700 transition cursor-pointer"
+        class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-200 bg-slate-800/80 hover:bg-slate-700 hover:text-white border border-slate-700 transition cursor-pointer"
       >
         <Download class="w-3.5 h-3.5 text-slate-300" />
         <span>Export CSV</span>
@@ -87,7 +89,7 @@
       <button
         onclick={() => feedState.exportData(true)}
         title="Export full filtered table to JSON"
-        class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-200 bg-slate-800/80 hover:bg-slate-700 hover:text-white border border-slate-700 transition cursor-pointer"
+        class="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-slate-200 bg-slate-800/80 hover:bg-slate-700 hover:text-white border border-slate-700 transition cursor-pointer"
       >
         <Download class="w-3.5 h-3.5 text-slate-300" />
         <span>Export JSON</span>

@@ -215,78 +215,181 @@
   });
 </script>
 
-<div class="p-6 space-y-5 overflow-y-auto h-full">
-  <!-- 1. SLEEK SINGLE-LINE HEADER BAR (Clean Modern Numbers & Typography) -->
-  <div class="px-5 py-3.5 rounded-2xl data-card flex flex-wrap items-center justify-between gap-4">
-    <!-- Metric 1: Total Records -->
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-blue-950/60 border border-blue-800/50 flex items-center justify-center text-blue-400">
-        <Database class="w-4 h-4" />
+<div class="p-6 space-y-6 overflow-y-auto h-full max-w-7xl mx-auto w-full">
+  <!-- 1. FOUR TOP KPI CARDS (Matches Hybrid Mockup Exactly) -->
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <!-- KPI 1 -->
+    <div class="data-card rounded-2xl p-5 relative overflow-hidden">
+      <div class="flex items-center justify-between mb-2">
+        <span class="micro-title">TOTAL RECORD VOLUME</span>
+        <span class="tabular-tag text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/15 text-blue-400">#01</span>
       </div>
-      <div>
-        <div class="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Total Records</div>
-        <div class="text-xl font-extrabold text-white font-num leading-tight">
-          {totalRecords.toLocaleString()}
-        </div>
+      <div class="kpi-number text-3xl text-white">
+        {totalRecords.toLocaleString()}
       </div>
-    </div>
-
-    <div class="hidden sm:block h-6 w-px bg-slate-800"></div>
-
-    <!-- Metric 2: Attributes Count -->
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-cyan-950/60 border border-cyan-800/50 flex items-center justify-center text-cyan-400">
-        <Layers class="w-4 h-4" />
-      </div>
-      <div>
-        <div class="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Attributes</div>
-        <div class="text-xl font-extrabold text-white font-num leading-tight">
-          {totalAttributes}
-        </div>
+      <div class="mt-2.5 flex items-center gap-2 text-xs">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+        <span class="text-emerald-400 font-medium">100% Valid XML Structure</span>
       </div>
     </div>
 
-    <div class="hidden sm:block h-6 w-px bg-slate-800"></div>
-
-    <!-- Metric 3: Average Fill Rate -->
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-blue-950/60 border border-blue-800/50 flex items-center justify-center text-blue-400">
-        <CheckCircle2 class="w-4 h-4" />
+    <!-- KPI 2 -->
+    <div class="data-card rounded-2xl p-5 relative overflow-hidden">
+      <div class="flex items-center justify-between mb-2">
+        <span class="micro-title">OVERALL HEALTH SCORE</span>
+        <span class="tabular-tag text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400">⚡</span>
       </div>
-      <div>
-        <div class="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Avg Fill Rate</div>
-        <div class="text-xl font-extrabold text-blue-400 font-num leading-tight">
-          {averageFillRate().toFixed(1)}%
-        </div>
+      <div class="kpi-number text-3xl text-emerald-400 flex items-baseline">
+        <span>{averageFillRate().toFixed(0)}</span><span class="kpi-decimal">.{Math.floor((averageFillRate() % 1) * 10)}%</span>
+      </div>
+      <div class="mt-2.5 flex items-center gap-2 text-xs">
+        <span class="tabular-tag text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+          {averageFillRate() >= 80 ? 'GRADE A' : averageFillRate() >= 60 ? 'GRADE B' : 'GRADE C'}
+        </span>
+        <span class="text-slate-400">Production Standard</span>
       </div>
     </div>
 
-    <div class="hidden sm:block h-6 w-px bg-slate-800"></div>
-
-    <!-- Metric 4: Incomplete Fields -->
-    <div class="flex items-center gap-3">
-      <div class="w-8 h-8 rounded-lg bg-amber-950/60 border border-amber-800/50 flex items-center justify-center text-amber-400">
-        <AlertTriangle class="w-4 h-4" />
+    <!-- KPI 3 -->
+    <div class="data-card rounded-2xl p-5 relative overflow-hidden">
+      <div class="flex items-center justify-between mb-2">
+        <span class="micro-title">ATTRIBUTES TRACKED</span>
+        <span class="tabular-tag text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/15 text-purple-400">COLUMNS</span>
       </div>
-      <div>
-        <div class="text-[10.5px] font-bold uppercase tracking-wider text-slate-400">Incomplete Fields</div>
-        <div class="text-xl font-extrabold text-amber-400 font-num leading-tight">
-          {incompleteCols.length}
-        </div>
+      <div class="kpi-number text-3xl text-white">
+        {totalAttributes}
+      </div>
+      <div class="mt-2.5 flex items-center gap-2 text-xs">
+        <span class="text-cyan-400 tabular-tag font-bold">{completeCols.length} Complete</span>
+        <span class="text-slate-600">·</span>
+        <span class="text-amber-400 tabular-tag font-bold">{warningCols.length} Partial</span>
+      </div>
+    </div>
+
+    <!-- KPI 4 -->
+    <div class="data-card rounded-2xl p-5 relative overflow-hidden">
+      <div class="flex items-center justify-between mb-2">
+        <span class="micro-title">INGESTION QUALITY</span>
+        <span class="tabular-tag text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-400">DUCKDB</span>
+      </div>
+      <div class="kpi-number text-3xl text-cyan-400 flex items-baseline">
+        <span>{completeCols.length}</span><span class="kpi-decimal"> / {totalAttributes}</span>
+      </div>
+      <div class="mt-2.5 flex items-center gap-2 text-xs text-slate-400">
+        <span class="tabular-tag">{criticalCols.length} critical empty fields</span>
       </div>
     </div>
   </div>
 
-  <!-- 2. MAIN SPLIT: LEFT FIELD DETAILS + RIGHT PIE CHART -->
-  <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+  <!-- 2. MAIN SPLIT: LEFT CHART (5 COLS) + RIGHT ATTRIBUTES (7 COLS) -->
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
     
-    <!-- LEFT SECTION (7 Cols / ~58% width): Field Details & Cards -->
-    <div class="lg:col-span-7 data-card rounded-2xl p-5 flex flex-col space-y-3.5">
-      
-      <!-- Controls Header: Category Sleek Bar + Sort Button -->
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
-        
-        <!-- Category Sleek Filter Pills -->
+    <!-- LEFT SECTION (5 Cols): Donut Chart & Completeness Breakdown -->
+    <div class="lg:col-span-5 space-y-4">
+      <div class="data-card rounded-2xl p-6 flex flex-col items-center justify-between relative overflow-hidden">
+        <div class="w-full flex items-center justify-between mb-2">
+          <div>
+            <h3 class="text-sm font-bold text-white tracking-tight">Completeness Breakdown</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Attribute fill rates across {feedState.completeness.length} columns</p>
+          </div>
+          <span class="tabular-tag text-xs font-bold px-2.5 py-1 rounded-lg data-card-subtle text-slate-200">
+            {averageFillRate().toFixed(1)}% SCORE
+          </span>
+        </div>
+
+        <!-- ECharts Donut Chart Container -->
+        <div class="w-full h-64 flex items-center justify-center my-2">
+          <div bind:this={chartContainer} class="w-full h-full"></div>
+        </div>
+
+        <!-- Interactive Legend Cards -->
+        <div class="w-full grid grid-cols-3 gap-2.5 pt-4 border-t border-slate-800 text-center">
+          <button
+            onclick={() => setFilter("complete")}
+            class="data-card-subtle p-2.5 rounded-xl hover:border-blue-500/60 transition cursor-pointer text-center group {currentFilter === 'complete' ? 'ring-1 ring-blue-500' : ''}"
+          >
+            <div class="micro-title">COMPLETE (100%)</div>
+            <div class="kpi-number text-sm text-cyan-400 mt-1">{completeCols.length} fields</div>
+          </button>
+          <button
+            onclick={() => setFilter("warning")}
+            class="data-card-subtle p-2.5 rounded-xl hover:border-amber-500/60 transition cursor-pointer text-center group {currentFilter === 'warning' ? 'ring-1 ring-amber-500' : ''}"
+          >
+            <div class="micro-title">PARTIAL (&gt;0%)</div>
+            <div class="kpi-number text-sm text-amber-400 mt-1">{warningCols.length} fields</div>
+          </button>
+          <button
+            onclick={() => setFilter("critical")}
+            class="data-card-subtle p-2.5 rounded-xl hover:border-rose-500/60 transition cursor-pointer text-center group {currentFilter === 'critical' ? 'ring-1 ring-rose-500' : ''}"
+          >
+            <div class="micro-title">EMPTY (0%)</div>
+            <div class="kpi-number text-sm text-rose-400 mt-1">{criticalCols.length} fields</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Priority Attention Box -->
+      {#if priorityLowestCols().length > 0}
+        <div class="data-card rounded-2xl p-4 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+              <ShieldAlert class="w-4 h-4 text-rose-400" />
+              Priority Attention Fields
+            </h4>
+            <span class="text-[11px] text-slate-400">Lowest coverage</span>
+          </div>
+
+          <div class="space-y-2">
+            {#each priorityLowestCols() as col}
+              {@const missingCount = (col.total_records || totalRecords) - col.valid_count}
+              <button
+                onclick={() => {
+                  feedState.fetchDeepDive(col.column_name);
+                  feedState.activeTab = "deepdive";
+                }}
+                class="w-full p-2.5 rounded-xl {col.fill_rate < 10 ? 'bg-rose-950/20 border-rose-900/30' : 'bg-amber-950/20 border-amber-900/30'} border flex items-center justify-between hover:bg-slate-800 transition cursor-pointer text-left"
+                title="Inspect '{col.original_name}' in Deep Dive"
+              >
+                <div class="min-w-0 pr-2">
+                  <div class="text-xs font-mono {col.fill_rate < 10 ? 'text-rose-200' : 'text-amber-200'} truncate" title={col.original_name}>
+                    {col.original_name}
+                  </div>
+                  <div class="text-[11px] {col.fill_rate < 10 ? 'text-rose-400/80' : 'text-amber-400/80'}">
+                    {missingCount > 0 ? missingCount.toLocaleString() : 'Some'} missing values ({((100 - col.fill_rate)).toFixed(1)}% empty)
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <span class="text-xs font-bold font-mono {col.fill_rate < 10 ? 'text-rose-400' : 'text-amber-400'}">
+                    {col.fill_rate.toFixed(1)}%
+                  </span>
+                  <ArrowRight class="w-3.5 h-3.5 text-slate-400" />
+                </div>
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+
+    <!-- RIGHT SECTION (7 Cols): Core Recruitment Attributes & List -->
+    <div class="lg:col-span-7 data-card rounded-2xl p-6 flex flex-col justify-between space-y-4">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div>
+          <h3 class="text-sm font-bold text-white tracking-tight">Critical Recruitment Attributes</h3>
+          <p class="text-xs text-slate-400 mt-0.5">Core fields required by major job boards (Indeed, Google for Jobs)</p>
+        </div>
+        <button
+          onclick={() => (feedState.activeTab = "completeness")}
+          class="text-xs text-cyan-400 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+        >
+          <span>View Full Matrix</span>
+          <span>&rarr;</span>
+        </button>
+      </div>
+
+      <!-- Controls: Filter Pills + Sort -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <!-- Filter Pills -->
         <div class="flex items-center gap-1.5 flex-wrap">
           <button 
             onclick={() => setFilter("all")} 
@@ -329,25 +432,23 @@
           </button>
         </div>
 
-        <!-- Sort Button (Lowest Fill First / Highest Fill First) -->
-        <div class="flex items-center gap-2 shrink-0">
-          <button 
-            onclick={toggleSort} 
-            class="px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 hover:text-white flex items-center gap-2 transition cursor-pointer shadow-sm"
-          >
-            <ArrowUpDown class="w-3.5 h-3.5 text-blue-400" />
-            <span>{sortMode === "lowest_first" ? "Lowest Fill First" : "Highest Fill First"}</span>
-          </button>
-        </div>
+        <!-- Sort Button -->
+        <button 
+          onclick={toggleSort} 
+          class="px-3 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-200 hover:text-white flex items-center gap-2 transition cursor-pointer shadow-sm shrink-0"
+        >
+          <ArrowUpDown class="w-3.5 h-3.5 text-blue-400" />
+          <span>{sortMode === "lowest_first" ? "Lowest First" : "Highest First"}</span>
+        </button>
       </div>
 
-      <!-- Search Bar with Live Field Counter -->
+      <!-- Search Bar -->
       <div class="relative">
         <Search class="w-3.5 h-3.5 text-slate-500 absolute left-3.5 top-3 pointer-events-none" />
         <input 
           type="text" 
           bind:value={searchQuery}
-          placeholder="Filter fields by name (e.g. payout, date, id, title)..."
+          placeholder="Filter fields by name (e.g. title, salary, location)..."
           class="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-9 pr-24 py-2 text-xs font-mono text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/40 transition"
         />
         <div class="absolute right-3 top-2.5 text-[11px] text-slate-500 font-mono">
@@ -355,8 +456,8 @@
         </div>
       </div>
 
-      <!-- Scrollable Cards Deck (Matching screenshot style) -->
-      <div class="space-y-2.5 max-h-[560px] overflow-y-auto pr-1">
+      <!-- Scrollable Attribute Rows -->
+      <div class="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
         {#if filteredCols().length === 0}
           <div class="p-8 text-center text-xs text-slate-500 italic">
             No attributes match the selected filter or search query.
@@ -369,153 +470,32 @@
                 feedState.fetchDeepDive(col.column_name);
                 feedState.activeTab = "deepdive";
               }}
-              class="w-full p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 hover:bg-slate-850 transition cursor-pointer group shadow-sm block text-left"
+              class="w-full data-card-subtle p-3.5 rounded-xl flex items-center justify-between hover:border-slate-600 transition cursor-pointer group text-left"
               title="Click to inspect '{col.original_name}' in Deep Dive"
             >
-              <div class="flex items-center justify-between gap-3 mb-2">
-                <span class="text-xs font-mono text-slate-300 group-hover:text-blue-300 truncate" title={col.original_name}>
-                  {col.original_name}
-                </span>
-                <span class="text-xs font-mono font-bold {badge.textColor} shrink-0">
+              <div class="flex items-center gap-3 min-w-0 pr-2">
+                <div class="w-2.5 h-2.5 rounded-full {badge.barColor} shrink-0"></div>
+                <div class="min-w-0">
+                  <div class="tabular-tag text-xs font-bold text-white group-hover:text-blue-300 truncate" title={col.original_name}>
+                    {col.original_name}
+                  </div>
+                  <div class="text-[11px] text-slate-400">
+                    {col.valid_count.toLocaleString()} rows populated
+                  </div>
+                </div>
+              </div>
+              <div class="flex items-center gap-4 shrink-0">
+                <div class="w-28 bg-slate-800 h-2 rounded-full overflow-hidden hidden sm:block">
+                  <div class="h-full {badge.barColor} rounded-full" style="width: {col.fill_rate}%"></div>
+                </div>
+                <span class="kpi-number text-xs font-bold {badge.textColor} w-14 text-right">
                   {col.fill_rate.toFixed(1)}%
                 </span>
-              </div>
-              <!-- Slim Progress Bar -->
-              <div class="w-full bg-slate-800/80 h-1.5 rounded-full overflow-hidden">
-                <div 
-                  class="h-full {badge.barColor} rounded-full transition-all duration-300" 
-                  style="width: {Math.max(2, col.fill_rate)}%"
-                ></div>
               </div>
             </button>
           {/each}
         {/if}
       </div>
-
-    </div>
-
-    <!-- RIGHT SECTION (5 Cols / ~42% width): Aesthetic Interactive Pie Chart -->
-    <div class="lg:col-span-5 space-y-4">
-      
-      <!-- Main Donut / Pie Chart Card -->
-      <div class="data-card rounded-2xl p-5 flex flex-col items-center relative overflow-hidden">
-        <div class="w-full flex items-center justify-between mb-1">
-          <div>
-            <h3 class="text-sm font-bold text-white flex items-center gap-2 tracking-tight">
-              <span class="w-2 h-2 rounded-full bg-blue-500"></span>
-              Feed Health Distribution
-            </h3>
-            <p class="text-xs text-slate-400">Quality breakdown across {feedState.completeness.length} discovered attributes</p>
-          </div>
-          <span class="text-[10px] font-mono text-slate-300 data-card-subtle px-2 py-0.5 rounded font-bold">DuckDB Core</span>
-        </div>
-
-        <!-- ECharts Donut Chart Container -->
-        <div class="w-full h-64 flex items-center justify-center my-1">
-          <div bind:this={chartContainer} class="w-full h-full"></div>
-        </div>
-
-        <!-- Interactive Legend Buttons -->
-        <div class="grid grid-cols-3 gap-2 w-full mt-1">
-          <!-- Complete -->
-          <button 
-            onclick={() => setFilter("complete")} 
-            class="p-2.5 rounded-xl data-card-subtle hover:border-blue-500/60 flex flex-col items-center transition cursor-pointer group"
-          >
-            <div class="flex items-center gap-1.5 mb-1">
-              <span class="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50"></span>
-              <span class="text-xs font-bold text-slate-200 group-hover:text-white">Complete</span>
-            </div>
-            <span class="text-sm font-extrabold text-blue-400 font-num">
-              {completeCols.length} 
-              <span class="text-[10px] font-normal text-slate-500">
-                ({feedState.completeness.length > 0 ? ((completeCols.length / feedState.completeness.length) * 100).toFixed(0) : 0}%)
-              </span>
-            </span>
-          </button>
-
-          <!-- Warning -->
-          <button 
-            onclick={() => setFilter("warning")} 
-            class="p-2.5 rounded-xl data-card-subtle hover:border-amber-500/60 flex flex-col items-center transition cursor-pointer group"
-          >
-            <div class="flex items-center gap-1.5 mb-1">
-              <span class="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/50"></span>
-              <span class="text-xs font-bold text-slate-200 group-hover:text-white">Warning</span>
-            </div>
-            <span class="text-sm font-extrabold text-amber-400 font-num">
-              {warningCols.length} 
-              <span class="text-[10px] font-normal text-slate-500">
-                ({feedState.completeness.length > 0 ? ((warningCols.length / feedState.completeness.length) * 100).toFixed(0) : 0}%)
-              </span>
-            </span>
-          </button>
-
-          <!-- Critical -->
-          <button 
-            onclick={() => setFilter("critical")} 
-            class="p-2.5 rounded-xl data-card-subtle hover:border-rose-500/60 flex flex-col items-center transition cursor-pointer group"
-          >
-            <div class="flex items-center gap-1.5 mb-1">
-              <span class="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50"></span>
-              <span class="text-xs font-bold text-slate-200 group-hover:text-white">Critical</span>
-            </div>
-            <span class="text-sm font-extrabold text-rose-400 font-num">
-              {criticalCols.length} 
-              <span class="text-[10px] font-normal text-slate-500">
-                ({feedState.completeness.length > 0 ? ((criticalCols.length / feedState.completeness.length) * 100).toFixed(0) : 0}%)
-              </span>
-            </span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Priority Attention Box (Lowest coverage fields) -->
-      <div class="data-card rounded-2xl p-4 space-y-2.5">
-        <div class="flex items-center justify-between">
-          <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-            <ShieldAlert class="w-4 h-4 text-rose-400" />
-            Priority Attention Fields
-          </h4>
-          <span class="text-[11px] text-slate-400">Lowest coverage</span>
-        </div>
-
-        {#if priorityLowestCols().length === 0}
-          <div class="p-3 text-xs text-slate-500 italic text-center">
-            All fields have 100% data coverage!
-          </div>
-        {:else}
-          <div class="space-y-2">
-            {#each priorityLowestCols() as col}
-              {@const missingCount = (col.total_records || totalRecords) - col.valid_count}
-              <button
-                onclick={() => {
-                  feedState.fetchDeepDive(col.column_name);
-                  feedState.activeTab = "deepdive";
-                }}
-                class="w-full p-2.5 rounded-xl {col.fill_rate < 10 ? 'bg-rose-950/20 border-rose-900/30' : 'bg-amber-950/20 border-amber-900/30'} border flex items-center justify-between hover:bg-slate-800 transition cursor-pointer text-left"
-                title="Inspect '{col.original_name}' in Deep Dive"
-              >
-                <div class="min-w-0 pr-2">
-                  <div class="text-xs font-mono {col.fill_rate < 10 ? 'text-rose-200' : 'text-amber-200'} truncate" title={col.original_name}>
-                    {col.original_name}
-                  </div>
-                  <div class="text-[11px] {col.fill_rate < 10 ? 'text-rose-400/80' : 'text-amber-400/80'}">
-                    {missingCount > 0 ? missingCount.toLocaleString() : 'Some'} missing values ({((100 - col.fill_rate)).toFixed(1)}% empty)
-                  </div>
-                </div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                  <span class="text-xs font-bold font-mono {col.fill_rate < 10 ? 'text-rose-400' : 'text-amber-400'}">
-                    {col.fill_rate.toFixed(1)}%
-                  </span>
-                  <ArrowRight class="w-3.5 h-3.5 text-slate-400" />
-                </div>
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-
     </div>
 
   </div>
