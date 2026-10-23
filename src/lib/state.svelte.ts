@@ -264,7 +264,27 @@ export class FeedLensState {
 
   async fetchTablePage() {
     if (typeof window !== "undefined" && !(window as any).__TAURI_INTERNALS__) {
-      this.tableData = mockTablePage;
+      let filteredRows = mockTablePage.rows;
+      if (this.searchFilter) {
+        const q = this.searchFilter.trim();
+        if (q.startsWith("missing:")) {
+          const col = q.slice(8).trim().toLowerCase();
+          filteredRows = mockTablePage.rows.filter((r) => !r[col] || r[col]?.trim() === "");
+        } else if (q.startsWith("populated:")) {
+          const col = q.slice(10).trim().toLowerCase();
+          filteredRows = mockTablePage.rows.filter((r) => r[col] && r[col]?.trim() !== "");
+        } else {
+          filteredRows = mockTablePage.rows.filter((r) =>
+            Object.values(r).some((v) => v?.toLowerCase().includes(q.toLowerCase()))
+          );
+        }
+      }
+      this.tableData = {
+        ...mockTablePage,
+        rows: filteredRows,
+        total_records: filteredRows.length,
+        total_pages: Math.max(1, Math.ceil(filteredRows.length / this.pageSize)),
+      };
       return;
     }
     this.isLoadingTable = true;
@@ -282,6 +302,20 @@ export class FeedLensState {
     } finally {
       this.isLoadingTable = false;
     }
+  }
+
+  filterByMissing(columnName: string) {
+    this.searchFilter = `missing:${columnName}`;
+    this.activeTab = "explorer";
+    this.applySearch(this.searchFilter);
+    this.showToast(`Filtered records missing "${columnName}"`);
+  }
+
+  filterByPopulated(columnName: string) {
+    this.searchFilter = `populated:${columnName}`;
+    this.activeTab = "explorer";
+    this.applySearch(this.searchFilter);
+    this.showToast(`Filtered records with populated "${columnName}"`);
   }
 
   async setPage(p: number) {

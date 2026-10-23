@@ -15,6 +15,9 @@
   } from "@lucide/svelte";
 
   let searchInput = $state(feedState.searchFilter);
+  $effect(() => {
+    searchInput = feedState.searchFilter;
+  });
   let fieldFilterQuery = $state("");
   let copiedKey = $state<string | null>(null);
 
@@ -52,7 +55,20 @@
     }).length;
   });
 
-  // Filtered & ordered visible columns list (populated first)
+  // Derived target column if missing: or populated: filter is active
+  let filterTargetCol = $derived(() => {
+    if (!feedState.searchFilter) return null;
+    const trimmed = feedState.searchFilter.trim();
+    if (trimmed.startsWith("missing:")) {
+      return trimmed.slice("missing:".length).trim().toLowerCase();
+    }
+    if (trimmed.startsWith("populated:")) {
+      return trimmed.slice("populated:".length).trim().toLowerCase();
+    }
+    return null;
+  });
+
+  // Filtered & ordered visible columns list (populated first, with pinned filter target)
   let visibleColumns = $derived(() => {
     if (!feedState.tableData) return [];
     let cols = [...feedState.tableData.columns];
@@ -65,6 +81,18 @@
         const rateB = rates.get(b.toLowerCase()) ?? 50;
         return rateB - rateA;
       });
+    }
+
+    // Pin target filtered column to the front so the user sees it immediately
+    const target = filterTargetCol();
+    if (target) {
+      const idx = cols.findIndex(
+        (c) => c.toLowerCase() === target || c.toLowerCase().replace(/[^a-z0-9_]/g, "_") === target
+      );
+      if (idx > -1) {
+        const [pinned] = cols.splice(idx, 1);
+        cols.unshift(pinned);
+      }
     }
 
     return cols;
@@ -171,15 +199,41 @@
         Filter
       </button>
 
-      <!-- Clear Filter Button (Requested by User) -->
-      {#if searchInput || feedState.searchFilter}
+      <!-- Active Filter Banner / Clear Filter Button -->
+      {#if feedState.searchFilter}
+        {@const isMissing = feedState.searchFilter.startsWith("missing:")}
+        {@const isPopulated = feedState.searchFilter.startsWith("populated:")}
+        {#if isMissing}
+          <div class="px-3 py-1.5 rounded-xl text-xs font-semibold backdrop-blur-md bg-rose-500/15 border border-rose-500/30 text-rose-300 flex items-center gap-2 shadow-sm shrink-0">
+            <span>Missing: <strong class="text-white font-mono">{feedState.searchFilter.slice(8)}</strong></span>
+            <button onclick={handleSearchClear} class="p-0.5 hover:text-white transition cursor-pointer" title="Clear filter">
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
+        {:else if isPopulated}
+          <div class="px-3 py-1.5 rounded-xl text-xs font-semibold backdrop-blur-md bg-sky-500/15 border border-sky-500/30 text-sky-300 flex items-center gap-2 shadow-sm shrink-0">
+            <span>Populated: <strong class="text-white font-mono">{feedState.searchFilter.slice(10)}</strong></span>
+            <button onclick={handleSearchClear} class="p-0.5 hover:text-white transition cursor-pointer" title="Clear filter">
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
+        {:else}
+          <button
+            onclick={handleSearchClear}
+            class="px-3 py-2 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 transition cursor-pointer flex items-center gap-1.5 shrink-0"
+            title="Clear search filter and show all records"
+          >
+            <X class="w-3.5 h-3.5" />
+            <span>Clear Filter</span>
+          </button>
+        {/if}
+      {:else if searchInput}
         <button
           onclick={handleSearchClear}
-          class="px-3 py-2 rounded-xl text-xs font-bold text-rose-400 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 transition cursor-pointer flex items-center gap-1.5 shrink-0"
-          title="Clear search filter and show all records"
+          class="px-3 py-2 rounded-xl text-xs font-bold text-slate-400 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 transition cursor-pointer flex items-center gap-1.5 shrink-0"
         >
           <X class="w-3.5 h-3.5" />
-          <span>Clear Filter</span>
+          <span>Clear</span>
         </button>
       {/if}
 
@@ -255,16 +309,22 @@
 
       <div class="overflow-x-auto overflow-y-auto flex-1 isolate">
         <table class="w-full text-left text-xs border-collapse">
-          <thead class="bg-slate-950/95 sticky top-0 z-10 border-b border-slate-800 text-slate-300 font-bold uppercase tracking-wider text-[10.5px] backdrop-blur-md">
+          <thead class="bg-[#0b101b] sticky top-0 z-20 border-b border-white/[0.08] text-slate-300 font-bold uppercase tracking-wider text-[10.5px] select-none shadow-md">
             <tr>
               <th class="py-3 px-3 w-12 text-center text-slate-500 bg-slate-950/95 font-mono">#</th>
               {#each visibleColumns() as col}
+                {@const isTargetCol = filterTargetCol() !== null && (filterTargetCol() === col.toLowerCase() || filterTargetCol() === col.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
                 <th
-                  class="py-3 px-3.5 cursor-pointer hover:text-white whitespace-nowrap bg-slate-950/95 font-sans"
+                  class="py-3 px-3.5 cursor-pointer hover:text-white whitespace-nowrap bg-slate-950/95 font-sans transition-colors {isTargetCol ? 'bg-cyan-950/40 text-cyan-300' : ''}"
                   onclick={() => feedState.setSort(col)}
                 >
                   <div class="flex items-center gap-1.5">
-                    <span>{col}</span>
+                    <span class="{isTargetCol ? 'text-cyan-300 font-bold' : ''}">{col}</span>
+                    {#if isTargetCol}
+                      <span class="px-1.5 py-0.2 rounded text-[9px] font-sans font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                        TARGET
+                      </span>
+                    {/if}
                     <ArrowUpDown class="w-3 h-3 text-slate-500" />
                   </div>
                 </th>
@@ -289,17 +349,18 @@
                   <!-- Visible Columns -->
                   {#each visibleColumns() as col}
                     {@const val = row[col]}
-                    <td class="py-2.5 px-3.5 max-w-[280px] truncate text-xs font-sans">
+                    {@const isTargetCol = filterTargetCol() !== null && (filterTargetCol() === col.toLowerCase() || filterTargetCol() === col.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
+                    <td class="py-2.5 px-3.5 max-w-[280px] truncate text-xs font-sans {isTargetCol ? 'bg-white/[0.02]' : ''}">
                       {#if val === null || val === undefined || String(val).trim() === ""}
-                        <span class="text-slate-600 italic text-[11px] font-mono">—</span>
-                      {:else if val === "false" || val === false}
-                        <span class="px-1.5 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 text-slate-400 text-[10px] font-mono">
-                          false
-                        </span>
-                      {:else if val === "true" || val === true}
-                        <span class="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-mono font-bold">
-                          true
-                        </span>
+                        {#if isTargetCol && feedState.searchFilter.startsWith("missing:")}
+                          <span class="text-rose-400/80 font-mono text-[11px] italic">missing</span>
+                        {:else}
+                          <span class="text-slate-600 italic text-[11px] font-mono">—</span>
+                        {/if}
+                      {:else if val === "false"}
+                        <span class="text-slate-500 font-mono text-[11px]">false</span>
+                      {:else if val === "true"}
+                        <span class="text-slate-300 font-mono text-[11px]">true</span>
                       {:else if String(val).startsWith("http://") || String(val).startsWith("https://")}
                         <span class="text-cyan-400 hover:underline truncate font-mono text-[11px]" title={val}>{val}</span>
                       {:else}

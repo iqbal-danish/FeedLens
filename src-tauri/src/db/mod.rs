@@ -16,6 +16,12 @@ pub struct ColumnCompleteness {
     pub fill_rate: f64,
     pub unique_count: u64,
     pub sample_values: Vec<String>,
+    pub min_length: u64,
+    pub max_length: u64,
+    pub avg_length: f64,
+    pub inferred_type: String,
+    pub is_candidate_key: bool,
+    pub has_collision_risk: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -235,6 +241,96 @@ impl DuckDbManager {
         })
     }
 
+    /// Helper to infer intuitive data types from column name and samples
+    pub fn infer_data_type(name: &str, samples: &[String]) -> String {
+        let low_name = name.to_lowercase();
+        if samples.is_empty() {
+            return "Empty".to_string();
+        }
+
+        // URL check
+        if samples.iter().any(|s| s.starts_with("http://") || s.starts_with("https://")) || low_name.contains("url") || low_name.contains("link") {
+            return "URL".to_string();
+        }
+
+        // Email check
+        if samples.iter().any(|s| s.contains('@') && s.contains('.')) || low_name.contains("email") {
+            return "Email".to_string();
+        }
+
+        // HTML check
+        if samples.iter().any(|s| (s.contains('<') && s.contains('>')) || s.contains("&lt;") || s.contains("<![CDATA[")) || low_name.contains("html") || low_name.contains("description") {
+            return "HTML".to_string();
+        }
+
+        // Date check
+        if samples.iter().all(|s| s.len() >= 10 && s.chars().filter(|&c| c == '-').count() == 2) || low_name.contains("date") || low_name.contains("time") {
+            return "Date".to_string();
+        }
+
+        // Boolean check
+        if samples.iter().all(|s| s.eq_ignore_ascii_case("true") || s.eq_ignore_ascii_case("false") || s == "0" || s == "1") {
+            return "Boolean".to_string();
+        }
+
+        // Numeric check
+        if samples.iter().all(|s| {
+            let clean = s.trim().trim_start_matches(|c| c == '$' || c == '€' || c == '£').replace(',', "");
+            clean.parse::<f64>().is_ok()
+        }) || low_name.contains("salary") || low_name.contains("price") || low_name.contains("amount") || low_name.contains("count") {
+            return "Numeric".to_string();
+        }
+
+        // Identifier check
+        if low_name.contains("id") || low_name.contains("guid") || low_name.contains("code") {
+            return "Identifier".to_string();
+        }
+
+        "Text".to_string()
+    }
+
+    /// Helper to build WHERE clause supporting missing:col and populated:col
+    pub fn build_filter_where_clause(filter_text: &Option<String>, cols: &[String]) -> String {
+        if let Some(ref text) = filter_text {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                if let Some(col_target) = trimmed.strip_prefix("missing:").or_else(|| trimmed.strip_prefix("is:empty:")) {
+                    let target = col_target.trim();
+                    let sanitized = Self::sanitize_column_name(target);
+                    let actual_col = if cols.contains(&sanitized) {
+                        Some(sanitized)
+                    } else {
+                        cols.iter().find(|c| c.eq_ignore_ascii_case(target) || c.eq_ignore_ascii_case(&sanitized)).cloned()
+                    };
+                    if let Some(c) = actual_col {
+                        return format!("WHERE \"{}\" IS NULL OR TRIM(\"{}\") = ''", c, c);
+                    }
+                } else if let Some(col_target) = trimmed.strip_prefix("populated:").or_else(|| trimmed.strip_prefix("is:valid:")) {
+                    let target = col_target.trim();
+                    let sanitized = Self::sanitize_column_name(target);
+                    let actual_col = if cols.contains(&sanitized) {
+                        Some(sanitized)
+                    } else {
+                        cols.iter().find(|c| c.eq_ignore_ascii_case(target) || c.eq_ignore_ascii_case(&sanitized)).cloned()
+                    };
+                    if let Some(c) = actual_col {
+                        return format!("WHERE \"{}\" IS NOT NULL AND TRIM(\"{}\") != ''", c, c);
+                    }
+                } else {
+                    let escaped = trimmed.replace('\'', "''");
+                    let conditions: Vec<String> = cols
+                        .iter()
+                        .map(|c| format!("CAST(\"{}\" AS VARCHAR) ILIKE '%{}%'", c, escaped))
+                        .collect();
+                    if !conditions.is_empty() {
+                        return format!("WHERE {}", conditions.join(" OR "));
+                    }
+                }
+            }
+        }
+        String::new()
+    }
+
     /// Ultra-fast completeness matrix calculation (<150ms on millions of rows)
     pub fn get_completeness_matrix(&self) -> Result<Vec<ColumnCompleteness>> {
         let cols = self.known_columns.lock().clone();
@@ -253,27 +349,41 @@ impl DuckDbManager {
         for col in cols {
             let original_name = mapping.get(&col).cloned().unwrap_or_else(|| col.clone());
 
-            // Use approx_count_distinct (HyperLogLog) for instant unique counts without full table hash sort
+            // Use approx_count_distinct (HyperLogLog) and vectorized string length profiling
             let query = format!(
                 "SELECT 
                     COUNT(\"{col}\") as non_nulls,
                     COUNT(CASE WHEN \"{col}\" = '' OR TRIM(\"{col}\") = '' THEN 1 END) as empty_str,
-                    approx_count_distinct(\"{col}\") as uniques
+                    approx_count_distinct(\"{col}\") as uniques,
+                    COALESCE(MIN(LENGTH(TRIM(\"{col}\"))), 0) as min_len,
+                    COALESCE(MAX(LENGTH(TRIM(\"{col}\"))), 0) as max_len,
+                    COALESCE(ROUND(AVG(LENGTH(TRIM(\"{col}\"))), 1), 0.0) as avg_len
                  FROM feed_records;"
             );
 
-            let (non_nulls, empty_str, uniques): (u64, u64, u64) = if let Ok(mut stmt) = conn.prepare(&query) {
-                stmt.query_row([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).unwrap_or((0, 0, 0))
-            } else {
-                (0, 0, 0)
-            };
+            let (non_nulls, empty_str, uniques, min_len, max_len, avg_len): (u64, u64, u64, u64, u64, f64) = 
+                if let Ok(mut stmt) = conn.prepare(&query) {
+                    stmt.query_row([], |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                        ))
+                    }).unwrap_or((0, 0, 0, 0, 0, 0.0))
+                } else {
+                    (0, 0, 0, 0, 0, 0.0)
+                };
 
             let valid_count = non_nulls.saturating_sub(empty_str);
-            let fill_rate = (valid_count as f64 / total as f64) * 100.0;
+            let missing_count = total.saturating_sub(valid_count);
+            let fill_rate = if total > 0 { (valid_count as f64 / total as f64) * 100.0 } else { 0.0 };
 
-            // Fetch top 3 sample values with index scan (NO DISTINCT, takes <0.1ms)
+            // Fetch top 10 sample values with index scan
             let sample_query = format!(
-                "SELECT \"{col}\" FROM feed_records WHERE \"{col}\" IS NOT NULL AND TRIM(\"{col}\") != '' LIMIT 3;"
+                "SELECT \"{col}\" FROM feed_records WHERE \"{col}\" IS NOT NULL AND TRIM(\"{col}\") != '' LIMIT 10;"
             );
             let samples: Vec<String> = if let Ok(mut sample_stmt) = conn.prepare(&sample_query) {
                 sample_stmt
@@ -284,16 +394,25 @@ impl DuckDbManager {
                 Vec::new()
             };
 
+            let inferred_type = Self::infer_data_type(&original_name, &samples);
+            let is_candidate_key = valid_count == total && uniques >= total && valid_count > 0;
+
             results.push(ColumnCompleteness {
                 column_name: col,
                 original_name,
                 total_records: total,
                 non_null_count: non_nulls,
-                empty_count: empty_str,
+                empty_count: missing_count,
                 valid_count,
                 fill_rate,
                 unique_count: uniques,
                 sample_values: samples,
+                min_length: min_len,
+                max_length: max_len,
+                avg_length: avg_len,
+                inferred_type,
+                is_candidate_key,
+                has_collision_risk: false,
             });
         }
 
@@ -386,20 +505,7 @@ impl DuckDbManager {
         let mapping = self.column_mapping.lock().clone();
         let conn = self.conn.lock();
 
-        let mut where_clause = String::new();
-        if let Some(ref text) = filter_text {
-            let trimmed = text.trim();
-            if !trimmed.is_empty() {
-                let escaped = trimmed.replace('\'', "''");
-                let conditions: Vec<String> = cols
-                    .iter()
-                    .map(|c| format!("CAST(\"{}\" AS VARCHAR) ILIKE '%{}%'", c, escaped))
-                    .collect();
-                if !conditions.is_empty() {
-                    where_clause = format!("WHERE {}", conditions.join(" OR "));
-                }
-            }
-        }
+        let where_clause = Self::build_filter_where_clause(&filter_text, &cols);
 
         let count_query = format!("SELECT COUNT(*) FROM feed_records {};", where_clause);
         let mut count_stmt = conn.prepare(&count_query)?;
@@ -460,20 +566,7 @@ impl DuckDbManager {
         let cols = self.known_columns.lock().clone();
         let conn = self.conn.lock();
 
-        let mut where_clause = String::new();
-        if let Some(ref text) = filter_text {
-            let trimmed = text.trim();
-            if !trimmed.is_empty() {
-                let escaped = trimmed.replace('\'', "''");
-                let conditions: Vec<String> = cols
-                    .iter()
-                    .map(|c| format!("CAST(\"{}\" AS VARCHAR) ILIKE '%{}%'", c, escaped))
-                    .collect();
-                if !conditions.is_empty() {
-                    where_clause = format!("WHERE {}", conditions.join(" OR "));
-                }
-            }
-        }
+        let where_clause = Self::build_filter_where_clause(&filter_text, &cols);
 
         let clean_path = export_path.replace('\\', "/").replace('\'', "''");
         let copy_sql = if is_json {

@@ -38,6 +38,12 @@ export interface ColumnCompleteness {
   fill_rate: number;
   unique_count: number;
   sample_values: string[];
+  min_length: number;
+  max_length: number;
+  avg_length: number;
+  inferred_type: string;
+  is_candidate_key: boolean;
+  has_collision_risk: boolean;
 }
 
 export interface ValueFrequency {
