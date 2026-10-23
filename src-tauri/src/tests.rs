@@ -162,6 +162,34 @@ mod tests {
     }
 
     #[test]
+    fn test_candidate_key_selection() {
+        let db = DuckDbManager::new().expect("DuckDB should init");
+        let initial_cols = vec!["refcode".to_string(), "url".to_string(), "title".to_string()];
+        db.init_table(&initial_cols).unwrap();
+
+        let mut row1 = HashMap::new();
+        row1.insert("refcode".to_string(), "JN-102026-7124972".to_string());
+        row1.insert("url".to_string(), "https://example.com/job/1".to_string());
+        row1.insert("title".to_string(), "Project Manager".to_string());
+
+        let mut row2 = HashMap::new();
+        row2.insert("refcode".to_string(), "JN-102026-7124973".to_string());
+        row2.insert("url".to_string(), "https://example.com/job/2".to_string());
+        row2.insert("title".to_string(), "Superintendent".to_string());
+
+        db.insert_batch(&[row1, row2]).unwrap();
+
+        let matrix = db.get_completeness_matrix().unwrap();
+        let refcode_m = matrix.iter().find(|m| m.original_name == "refcode").unwrap();
+        assert_eq!(refcode_m.inferred_type, "Identifier", "refcode must be Identifier, NOT Date");
+        assert!(refcode_m.is_candidate_key, "refcode should be marked as Candidate Key");
+
+        let url_m = matrix.iter().find(|m| m.original_name == "url").unwrap();
+        assert_eq!(url_m.inferred_type, "URL");
+        assert!(!url_m.is_candidate_key, "url must NOT be marked as Candidate Key");
+    }
+
+    #[test]
     fn test_cpc_monster_feed() {
         use std::fs::File;
         use std::io::BufReader;
@@ -277,5 +305,99 @@ mod tests {
         assert!(result.is_err(), "Should return error for 404 URL");
         let err_msg = result.err().unwrap().to_string();
         assert!(err_msg.contains("HTTP 404") || err_msg.contains("Feed not found"), "Error was: {}", err_msg);
+    }
+
+    #[test]
+    fn test_unescaped_html_in_xml_description() {
+        let xml_data = r#"<?xml version="1.0" encoding="UTF-8"?>
+<jobfeed>
+   <provider>Michael Page</provider>
+   <jobs>
+      <job>
+         <refcode><![CDATA[JN-102026-7124972]]></refcode>
+         <title><![CDATA[Project Manager - Commercial]]></title>
+         <company>Michael Page</company>
+         <city>Columbus</city>
+         <description>
+            <ul>
+               <li>Strong promotion track with fast growing GC!</li>
+               <li>Flexible work environment</li>
+            </ul>
+            <h2>About Our Client</h2>
+            <p>Well established contractor.<br><br>The company is expanding.</p>
+         </description>
+      </job>
+      <job>
+         <refcode><![CDATA[JN-102026-7124973]]></refcode>
+         <title><![CDATA[Superintendent]]></title>
+         <company>Michael Page</company>
+         <city>Cleveland</city>
+         <description>
+            <p>Looking for a superintendent.<br>Apply now!</p>
+         </description>
+      </job>
+   </jobs>
+</jobfeed>"#;
+
+        let detected = detect_xml_record_tag(Cursor::new(xml_data), 1024 * 1024).unwrap();
+        assert_eq!(detected, "job", "Should detect 'job', NOT 'li' or 'ul'");
+
+        let mut parser = XmlStreamParser::new(Cursor::new(xml_data), &detected, false);
+        let rec1 = parser.next_record().unwrap().expect("Record 1 should exist");
+        assert_eq!(rec1.fields.get("refcode").map(|s| s.as_str()), Some("JN-102026-7124972"));
+        assert_eq!(rec1.fields.get("title").map(|s| s.as_str()), Some("Project Manager - Commercial"));
+        assert_eq!(rec1.fields.get("company").map(|s| s.as_str()), Some("Michael Page"));
+        assert_eq!(rec1.fields.get("city").map(|s| s.as_str()), Some("Columbus"));
+
+        let desc = rec1.fields.get("description").expect("description should exist");
+        assert!(desc.contains("Strong promotion track"), "desc: {}", desc);
+        assert!(desc.contains("About Our Client"), "desc: {}", desc);
+        assert!(!rec1.fields.contains_key("description.ul.li"), "Should not create HTML sub-columns");
+
+        let rec2 = parser.next_record().unwrap().expect("Record 2 should exist");
+        assert_eq!(rec2.fields.get("refcode").map(|s| s.as_str()), Some("JN-102026-7124973"));
+        assert_eq!(rec2.fields.get("title").map(|s| s.as_str()), Some("Superintendent"));
+
+        assert!(parser.next_record().unwrap().is_none());
+    }
+
+    #[test]
+    fn test_michael_page_user_feed() {
+        use std::fs::File;
+        use std::io::BufReader;
+        let path = r#"C:\Users\diqbal\Downloads\1fd01e4d6698839c5352.xml"#;
+        if std::path::Path::new(path).exists() {
+            let file = File::open(path).expect("Should open user feed file");
+            let tag = detect_xml_record_tag(file, 5 * 1024 * 1024).expect("Should detect XML tag");
+            assert_eq!(tag, "job", "Target tag should be detected as 'job'");
+
+            let file2 = File::open(path).expect("Should open user feed file");
+            let mut parser = XmlStreamParser::new(BufReader::new(file2), &tag, false);
+            let mut count = 0;
+            while let Some(rec) = parser.next_record().unwrap() {
+                count += 1;
+                if count == 1 {
+                    assert!(rec.fields.contains_key("title"), "Should have title");
+                    assert!(rec.fields.contains_key("refcode"), "Should have refcode");
+                    assert!(rec.fields.contains_key("company"), "Should have company");
+                    assert_eq!(rec.fields.get("company").map(|s| s.as_str()), Some("Michael Page"));
+                    assert!(!rec.fields.contains_key("li"), "Should not have 'li' root key");
+
+                    // Verify customfields pivoted properly
+                    assert!(rec.fields.contains_key("campaign.customfields.Refcode"), "Should pivot Refcode customfield");
+                    assert!(rec.fields.contains_key("campaign.customfields.Title"), "Should pivot Title customfield");
+                    assert!(rec.fields.contains_key("campaign.customfields.City"), "Should pivot City customfield");
+                    assert!(rec.fields.contains_key("campaign.customfields.State"), "Should pivot State customfield");
+                    assert!(!rec.fields.contains_key("campaign.customfields.customfield.name"), "Should not have raw .name key");
+                    assert!(!rec.fields.contains_key("campaign.customfields.customfield.value"), "Should not have raw .value key");
+                }
+                assert!(!rec.fields.contains_key("campaign.customfields.customfield.name"), "Raw .name must never appear in any job");
+                assert!(!rec.fields.contains_key("campaign.customfields.customfield.value"), "Raw .value must never appear in any job");
+                if count >= 500 {
+                    break;
+                }
+            }
+            assert_eq!(count, 500, "Should successfully read at least 500 jobs");
+        }
     }
 }

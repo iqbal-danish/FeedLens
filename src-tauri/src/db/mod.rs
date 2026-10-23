@@ -263,8 +263,27 @@ impl DuckDbManager {
             return "HTML".to_string();
         }
 
-        // Date check
-        if samples.iter().all(|s| s.len() >= 10 && s.chars().filter(|&c| c == '-').count() == 2) || low_name.contains("date") || low_name.contains("time") {
+        // Identifier check (check before Date so refcode/job_id/req_id are never misclassified as Date)
+        if low_name.contains("id") || low_name.contains("guid") || low_name.contains("code") || low_name.contains("ref") || low_name.contains("key") {
+            return "Identifier".to_string();
+        }
+
+        // Date check - require dates to actually start with numbers and have valid calendar separators
+        let looks_like_date = samples.iter().all(|s| {
+            let t = s.trim();
+            if t.len() < 8 || t.len() > 30 {
+                return false;
+            }
+            let first_char = t.chars().next().unwrap_or(' ');
+            if !first_char.is_ascii_digit() {
+                return false;
+            }
+            let hyphens = t.chars().filter(|&c| c == '-').count();
+            let slashes = t.chars().filter(|&c| c == '/').count();
+            (hyphens == 2 || slashes == 2) && t.chars().all(|c| c.is_ascii_digit() || c == '-' || c == '/' || c == ':' || c == 'T' || c == 'Z' || c == ' ')
+        });
+
+        if looks_like_date || low_name.contains("date") || low_name.contains("time") {
             return "Date".to_string();
         }
 
@@ -279,11 +298,6 @@ impl DuckDbManager {
             clean.parse::<f64>().is_ok()
         }) || low_name.contains("salary") || low_name.contains("price") || low_name.contains("amount") || low_name.contains("count") {
             return "Numeric".to_string();
-        }
-
-        // Identifier check
-        if low_name.contains("id") || low_name.contains("guid") || low_name.contains("code") {
-            return "Identifier".to_string();
         }
 
         "Text".to_string()
@@ -349,12 +363,12 @@ impl DuckDbManager {
         for col in cols {
             let original_name = mapping.get(&col).cloned().unwrap_or_else(|| col.clone());
 
-            // Use approx_count_distinct (HyperLogLog) and vectorized string length profiling
+            // Use exact COUNT(DISTINCT) for precision and vectorized string length profiling
             let query = format!(
                 "SELECT 
                     COUNT(\"{col}\") as non_nulls,
                     COUNT(CASE WHEN \"{col}\" = '' OR TRIM(\"{col}\") = '' THEN 1 END) as empty_str,
-                    approx_count_distinct(\"{col}\") as uniques,
+                    COUNT(DISTINCT \"{col}\") as uniques,
                     COALESCE(MIN(LENGTH(TRIM(\"{col}\"))), 0) as min_len,
                     COALESCE(MAX(LENGTH(TRIM(\"{col}\"))), 0) as max_len,
                     COALESCE(ROUND(AVG(LENGTH(TRIM(\"{col}\"))), 1), 0.0) as avg_len
@@ -395,7 +409,26 @@ impl DuckDbManager {
             };
 
             let inferred_type = Self::infer_data_type(&original_name, &samples);
-            let is_candidate_key = valid_count == total && uniques >= total && valid_count > 0;
+            let low_name = original_name.to_lowercase();
+            let is_id_name = low_name == "id"
+                || low_name == "refcode"
+                || low_name == "job_id"
+                || low_name == "jobid"
+                || low_name.ends_with(".id")
+                || low_name.ends_with(".refcode")
+                || low_name.ends_with(".job_id")
+                || low_name.contains("reference")
+                || low_name.contains("requisition");
+
+            let is_identifier_like = is_id_name || (inferred_type == "Identifier" && !low_name.contains("country") && !low_name.contains("currency"));
+
+            let is_candidate_key = if is_identifier_like {
+                fill_rate >= 99.0 && (uniques as f64 / total as f64) >= 0.95
+            } else if inferred_type != "URL" && inferred_type != "HTML" && inferred_type != "Date" && inferred_type != "Boolean" {
+                valid_count == total && uniques >= total && valid_count > 0
+            } else {
+                false
+            };
 
             results.push(ColumnCompleteness {
                 column_name: col,
