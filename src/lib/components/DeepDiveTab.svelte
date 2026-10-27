@@ -12,9 +12,11 @@
     Search,
     ChevronDown,
     X,
+    Layers,
+    FileSpreadsheet,
   } from "@lucide/svelte";
 
-  let chartContainer: HTMLDivElement;
+  let chartContainer = $state<HTMLDivElement>();
   let chartInstance: echarts.ECharts | null = null;
   let chartType = $state<"bar" | "pie">("bar");
 
@@ -24,6 +26,13 @@
   let tableSearchQuery = $state("");
   let dropdownRef = $state<HTMLDivElement>();
   let searchInputRef = $state<HTMLInputElement>();
+
+  // Pivot / Cross-Tabulation State
+  let isPivotDropdownOpen = $state(false);
+  let pivotSearchQuery = $state("");
+  let pivotTableSearchQuery = $state("");
+  let pivotDropdownRef = $state<HTMLDivElement>();
+  let pivotSearchInputRef = $state<HTMLInputElement>();
 
   let completeCount = $derived(feedState.completeness.filter((c) => c.fill_rate >= 100).length);
   let partialCount = $derived(feedState.completeness.filter((c) => c.fill_rate < 100).length);
@@ -40,6 +49,30 @@
     });
   });
 
+  // Suggested low-cardinality columns for horizontal pivoting (e.g. remote, status, work_model)
+  let suggestedPivotCols = $derived(() => {
+    return feedState.completeness.filter((c) => {
+      const low = c.column_name.toLowerCase();
+      return (
+        c.unique_count <= 25 &&
+        c.unique_count >= 2 &&
+        c.column_name !== feedState.selectedColumn &&
+        !low.includes("id") &&
+        !low.includes("url")
+      );
+    }).slice(0, 8);
+  });
+
+  // Filtered secondary columns in the pivot dropdown
+  let filteredPivotColumns = $derived(() => {
+    const q = pivotSearchQuery.trim().toLowerCase();
+    return feedState.completeness.filter((c) => {
+      if (c.column_name === feedState.selectedColumn) return false;
+      if (!q) return true;
+      return c.column_name.toLowerCase().includes(q) || c.original_name.toLowerCase().includes(q);
+    });
+  });
+
   let currentColumnInfo = $derived(() => {
     return feedState.completeness.find((c) => c.column_name === feedState.selectedColumn);
   });
@@ -50,11 +83,40 @@
     return feedState.columnDistribution.filter((d) => d.value.toLowerCase().includes(q));
   });
 
+  let filteredPivotRows = $derived(() => {
+    if (!feedState.pivotResult) return [];
+    if (!pivotTableSearchQuery.trim()) return feedState.pivotResult.rows;
+    const q = pivotTableSearchQuery.trim().toLowerCase();
+    return feedState.pivotResult.rows.filter((r) => r.primary_value.toLowerCase().includes(q));
+  });
+
   function selectColumn(name: string) {
     feedState.selectedColumn = name;
-    feedState.fetchDeepDive(name);
+    if (feedState.pivotSecondaryCol) {
+      feedState.fetchCrossTabulation(name, feedState.pivotSecondaryCol);
+    } else {
+      feedState.fetchDeepDive(name);
+    }
     isDropdownOpen = false;
     searchQuery = "";
+  }
+
+  function selectPivotColumn(col: string | null) {
+    feedState.pivotSecondaryCol = col;
+    isPivotDropdownOpen = false;
+    pivotSearchQuery = "";
+    if (chartInstance) {
+      chartInstance.dispose();
+      chartInstance = null;
+    }
+    if (col && feedState.selectedColumn) {
+      feedState.fetchCrossTabulation(feedState.selectedColumn, col);
+    } else if (feedState.selectedColumn) {
+      feedState.fetchDeepDive(feedState.selectedColumn);
+      setTimeout(() => {
+        updateChart();
+      }, 50);
+    }
   }
 
   function toggleDropdown() {
@@ -64,14 +126,29 @@
     }
   }
 
+  function togglePivotDropdown() {
+    isPivotDropdownOpen = !isPivotDropdownOpen;
+    if (isPivotDropdownOpen) {
+      setTimeout(() => pivotSearchInputRef?.focus(), 50);
+    }
+  }
+
   function handleDocumentClick(e: MouseEvent) {
     if (isDropdownOpen && dropdownRef && !dropdownRef.contains(e.target as Node)) {
       isDropdownOpen = false;
+    }
+    if (isPivotDropdownOpen && pivotDropdownRef && !pivotDropdownRef.contains(e.target as Node)) {
+      isPivotDropdownOpen = false;
     }
   }
 
   function updateChart() {
     if (!chartContainer || feedState.columnDistribution.length === 0) return;
+
+    if (chartInstance && chartInstance.getDom() !== chartContainer) {
+      chartInstance.dispose();
+      chartInstance = null;
+    }
 
     if (!chartInstance) {
       chartInstance = echarts.init(chartContainer);
@@ -173,10 +250,11 @@
       };
       chartInstance.setOption(option, true);
     }
+    chartInstance.resize();
   }
 
   $effect(() => {
-    if (feedState.columnDistribution.length > 0 && chartType) {
+    if (chartContainer && feedState.columnDistribution.length > 0 && chartType && !feedState.pivotSecondaryCol) {
       updateChart();
     }
   });
@@ -315,6 +393,97 @@
           </div>
         {/if}
       </div>
+
+      <!-- Pivot / Segment Selector -->
+      <div class="relative flex items-center gap-2.5 pl-3 border-l border-slate-800" bind:this={pivotDropdownRef}>
+        <span class="text-xs font-semibold uppercase tracking-wider text-cyan-400 shrink-0 flex items-center gap-1.5">
+          <Layers class="w-3.5 h-3.5 text-cyan-400" />
+          <span>Pivot By:</span>
+        </span>
+
+        <div class="relative">
+          <button
+            type="button"
+            onclick={togglePivotDropdown}
+            class="flex items-center justify-between gap-2.5 bg-slate-950 hover:bg-slate-900 border text-white rounded-xl px-3 py-2 text-xs font-mono transition group min-w-[200px] cursor-pointer {feedState.pivotSecondaryCol ? 'border-cyan-500/70 bg-cyan-950/20 text-cyan-200' : 'border-slate-800 text-slate-400'}"
+            title={feedState.pivotSecondaryCol || "None (Single Distribution)"}
+          >
+            <div class="flex items-center gap-2 truncate flex-1 min-w-0">
+              <span class="w-1.5 h-1.5 rounded-full {feedState.pivotSecondaryCol ? 'bg-cyan-400' : 'bg-slate-600'} shrink-0"></span>
+              <span class="truncate font-semibold">{feedState.pivotSecondaryCol || "None (Single Column)"}</span>
+            </div>
+            <ChevronDown class="w-3.5 h-3.5 text-slate-400 transition {isPivotDropdownOpen ? 'rotate-180' : ''}" />
+          </button>
+
+          <!-- Floating Pivot Dropdown Menu -->
+          {#if isPivotDropdownOpen}
+            <div
+              class="absolute top-full left-0 mt-2 w-80 max-w-[90vw] max-h-[420px] bg-slate-900/98 border border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl z-50 flex flex-col overflow-hidden animate-in fade-in duration-150"
+              style="box-shadow: 0 20px 50px -10px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.06);"
+            >
+              <!-- None Option -->
+              <div class="p-2 border-b border-slate-800 bg-slate-950/80 shrink-0">
+                <button
+                  type="button"
+                  onclick={() => selectPivotColumn(null)}
+                  class="w-full text-left px-3 py-1.5 rounded-xl text-xs font-mono transition cursor-pointer {feedState.pivotSecondaryCol === null ? 'bg-slate-800 text-white font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}"
+                >
+                  ✓ None (Single Column Distribution)
+                </button>
+              </div>
+
+              <!-- Quick Suggested Chips -->
+              {#if suggestedPivotCols().length > 0}
+                <div class="p-2.5 border-b border-slate-800/80 bg-slate-950/50">
+                  <span class="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Suggested Fields (Low Cardinality)
+                  </span>
+                  <div class="flex flex-wrap gap-1">
+                    {#each suggestedPivotCols() as sug}
+                      <button
+                        type="button"
+                        onclick={() => selectPivotColumn(sug.column_name)}
+                        class="px-2 py-0.5 rounded text-[10.5px] font-mono transition cursor-pointer border {feedState.pivotSecondaryCol === sug.column_name ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 font-bold' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'}"
+                      >
+                        {sug.column_name}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Search -->
+              <div class="p-2 border-b border-slate-800 bg-slate-950/80 shrink-0">
+                <div class="relative">
+                  <Search class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5 pointer-events-none" />
+                  <input
+                    bind:this={pivotSearchInputRef}
+                    bind:value={pivotSearchQuery}
+                    type="text"
+                    placeholder="Search column..."
+                    class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
+              <!-- List of Columns -->
+              <div class="flex-1 overflow-y-auto p-2 space-y-1 max-h-[220px]">
+                {#each filteredPivotColumns() as col}
+                  {@const isSelected = col.column_name === feedState.pivotSecondaryCol}
+                  <button
+                    type="button"
+                    onclick={() => selectPivotColumn(col.column_name)}
+                    class="w-full text-left flex items-center justify-between px-3 py-1.5 rounded-xl text-xs font-mono transition cursor-pointer {isSelected ? 'bg-cyan-950/60 text-cyan-200 font-bold' : 'text-slate-300 hover:bg-slate-800/60'}"
+                  >
+                    <span class="truncate">{col.original_name}</span>
+                    <span class="text-[10px] text-slate-500">{col.unique_count} unique</span>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        </div>
+      </div>
     </div>
 
     <!-- Quick Stats for chosen col (Matte Neutral Badges) -->
@@ -358,6 +527,129 @@
     {/if}
   </div>
 
+  {#if feedState.pivotSecondaryCol}
+    <!-- Cross-Tabulation Pivot Matrix View -->
+    <div class="p-5 rounded-2xl data-card flex flex-col space-y-4 font-sans">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-bold text-white tracking-tight flex items-center gap-2">
+              <Layers class="w-4 h-4 text-cyan-400" />
+              <span>Cross-Tabulation Pivot Matrix</span>
+            </h3>
+            {#if feedState.pivotResult}
+              <span class="px-2 py-0.5 rounded-md text-[10px] font-mono text-cyan-300 bg-cyan-950/60 border border-cyan-800/60">
+                {feedState.pivotResult.total_primary_uniques.toLocaleString()} unique {feedState.selectedColumn}
+              </span>
+            {/if}
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">
+            Grouping by <span class="text-cyan-300 font-mono font-bold">{feedState.selectedColumn}</span> segmented horizontally by <span class="text-cyan-300 font-mono font-bold">{feedState.pivotSecondaryCol}</span>
+            {#if feedState.pivotResult?.secondary_values.includes('[Other]')}
+              <span class="text-slate-400 font-mono text-[11px] ml-1.5">(Showing Top 20 values + [Other] + Total)</span>
+            {/if}
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2.5">
+          <!-- Live Table Filter -->
+          <div class="relative">
+            <Search class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5 pointer-events-none" />
+            <input
+              bind:value={pivotTableSearchQuery}
+              type="text"
+              placeholder="Filter {feedState.selectedColumn}..."
+              class="bg-slate-950/80 border border-slate-800 rounded-xl pl-8 pr-7 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-slate-600 font-mono transition w-44 focus:w-56"
+            />
+            {#if pivotTableSearchQuery}
+              <button
+                type="button"
+                onclick={() => (pivotTableSearchQuery = "")}
+                class="absolute right-2 top-2 text-slate-500 hover:text-slate-300 p-0.5 rounded transition cursor-pointer"
+              >
+                <X class="w-3 h-3" />
+              </button>
+            {/if}
+          </div>
+
+          <!-- Export Options -->
+          <div class="flex items-center gap-2">
+            <!-- Export Complete 3-Column Breakdown (Company, City, Count) -->
+            <button
+              onclick={() => feedState.exportBreakdownPairs(feedState.selectedColumn, feedState.pivotSecondaryCol!)}
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-slate-500 text-slate-200 hover:text-white transition cursor-pointer"
+              title="Export complete 3-column breakdown with every single location and job count (100% full data, no truncation)"
+            >
+              <FileSpreadsheet class="w-3.5 h-3.5 text-cyan-400" />
+              <span>Export All Pairs (3 Columns)</span>
+            </button>
+
+            <!-- Export Pivot Matrix (Wide) -->
+            <button
+              onclick={() => feedState.exportCrossTabulation(feedState.selectedColumn, feedState.pivotSecondaryCol!)}
+              class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition cursor-pointer shadow-md shadow-cyan-600/20"
+              title="Export the horizontal pivot matrix table (Top 20 + [Other] + Total) to CSV"
+            >
+              <Download class="w-3.5 h-3.5 text-white" />
+              <span>Export Pivot (Wide)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Table Container -->
+      <div class="overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-950/60 max-h-[550px]">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="bg-slate-900 sticky top-0 z-10 border-b border-slate-800 text-slate-400 font-bold uppercase tracking-wider text-[11px] font-mono select-none">
+            <tr>
+              <th class="py-2.5 px-3.5 w-12 text-center text-slate-500">#</th>
+              <th class="py-2.5 px-3.5">{feedState.selectedColumn}</th>
+              {#if feedState.pivotResult}
+                {#each feedState.pivotResult.secondary_values as secVal}
+                  <th class="py-2.5 px-3.5 text-right whitespace-nowrap {secVal === '[Other]' ? 'text-amber-300' : 'text-cyan-300'} font-bold">{secVal}</th>
+                {/each}
+                <th class="py-2.5 px-3.5 text-right w-24 text-white font-bold bg-slate-800/40">Total</th>
+              {/if}
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/40 font-mono text-xs">
+            {#if feedState.isLoadingPivot}
+              <tr>
+                <td colspan={50} class="py-12 text-center text-slate-400">
+                  <RefreshCw class="w-5 h-5 animate-spin mx-auto text-cyan-400 mb-2" />
+                  Computing cross-tabulation matrix across feed...
+                </td>
+              </tr>
+            {:else if !feedState.pivotResult || filteredPivotRows().length === 0}
+              <tr>
+                <td colspan={50} class="py-12 text-center text-slate-500 italic font-sans">
+                  No matching pivot records found.
+                </td>
+              </tr>
+            {:else}
+              {#each filteredPivotRows() as row, i}
+                <tr class="hover:bg-slate-800/30 transition-colors">
+                  <td class="py-2.5 px-3.5 text-center text-slate-500 text-[11px]">{i + 1}</td>
+                  <td class="py-2.5 px-3.5 font-medium text-slate-200 truncate max-w-sm" title={row.primary_value}>
+                    {row.primary_value}
+                  </td>
+                  {#each feedState.pivotResult.secondary_values as secVal}
+                    {@const cnt = row.counts[secVal] || 0}
+                    <td class="py-2.5 px-3.5 text-right {cnt > 0 ? (secVal === '[Other]' ? 'text-amber-200/90 font-medium' : 'text-slate-100 font-bold') : 'text-slate-600'}">
+                      {cnt > 0 ? cnt.toLocaleString() : '—'}
+                    </td>
+                  {/each}
+                  <td class="py-2.5 px-3.5 text-right font-bold text-white bg-slate-800/20">
+                    {row.total.toLocaleString()}
+                  </td>
+                </tr>
+              {/each}
+            {/if}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {:else}
   <!-- Chart and Duplicates Section (Top) -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
     <!-- Value Distribution Chart -->
@@ -534,4 +826,5 @@
       </table>
     </div>
   </div>
+  {/if}
 </div>

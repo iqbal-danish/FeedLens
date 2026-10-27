@@ -9,6 +9,7 @@ import type {
   DuplicateEntry,
   QueryResultPage,
   RecentFeed,
+  CrossTabulationResult,
 } from "./types";
 import {
   mockStats,
@@ -36,6 +37,11 @@ export class FeedLensState {
   columnDistribution = $state<ValueFrequency[]>([]);
   duplicateEntries = $state<DuplicateEntry[]>([]);
   isLoadingDeepDive = $state(false);
+
+  // Cross-Tabulation Pivot Matrix state
+  pivotSecondaryCol = $state<string | null>(null);
+  pivotResult = $state<CrossTabulationResult | null>(null);
+  isLoadingPivot = $state(false);
 
   // Data Explorer table state
   tableData = $state<QueryResultPage | null>(null);
@@ -95,27 +101,29 @@ export class FeedLensState {
   async setupListeners() {
     await listen<IngestionProgress>("ingest-progress", (event) => {
       this.progress = event.payload;
-      if (event.payload.status === "ready" || event.payload.status === "cancelled" || event.payload.status === "error") {
+      if (event.payload.status === "cancelled" || event.payload.status === "error") {
         this.isIngesting = false;
-      } else if (event.payload.status === "indexing") {
-        if (!this.stats && this.isIngesting) {
-          this.hasActiveDataset = true;
-        }
       }
     });
 
     await listen("ingest-complete", async () => {
-      this.isIngesting = false;
       if (this.progress) {
-        this.progress.status = "ready";
+        this.progress.status = "indexing";
+        this.progress.current_phase = "Finalizing Completeness Matrix & Health Metrics...";
         this.progress.percentage = 100.0;
       }
       this.lastError = null;
+      try {
+        await this.refreshAllData();
+        await this.fetchRecentFeeds();
+      } finally {
+        this.isIngesting = false;
+        this.hasActiveDataset = true;
+        if (this.progress) {
+          this.progress.status = "ready";
+        }
+      }
       this.showToast("Feed successfully indexed into DuckDB!");
-      await this.refreshAllData();
-      await this.fetchRecentFeeds();
-      this.isIngesting = false;
-      this.hasActiveDataset = true;
       this.activeTab = "overview";
     });
 
@@ -364,6 +372,70 @@ export class FeedLensState {
     }
   }
 
+  async fetchCrossTabulation(primaryCol: string, secondaryCol: string) {
+    if (!primaryCol || !secondaryCol) {
+      this.pivotResult = null;
+      return;
+    }
+    this.isLoadingPivot = true;
+    try {
+      const res = await invoke<CrossTabulationResult>("get_cross_tabulation", {
+        primaryCol,
+        secondaryCol,
+        limit: 150,
+        filterText: this.searchFilter || null,
+      });
+      this.pivotResult = res;
+    } catch (e: any) {
+      console.error("Pivot error:", e);
+      this.showToast(`Pivot calculation failed: ${e.message || e}`);
+    } finally {
+      this.isLoadingPivot = false;
+    }
+  }
+
+  async exportCrossTabulation(primaryCol: string, secondaryCol: string) {
+    try {
+      const pClean = primaryCol.replace(/[^a-zA-Z0-9_]/g, "_");
+      const sClean = secondaryCol.replace(/[^a-zA-Z0-9_]/g, "_");
+      const defaultName = `pivot_${pClean}_by_${sClean}_${Date.now()}.csv`;
+      const path = await invoke<string | null>("pick_export_file", { defaultName, isJson: false });
+      if (path) {
+        this.showToast(`Exporting pivot matrix to ${path}...`);
+        const count = await invoke<number>("export_cross_tabulation", {
+          primaryCol,
+          secondaryCol,
+          exportPath: path,
+          filterText: this.searchFilter || null,
+        });
+        this.showToast(`Successfully exported pivot matrix for ${count.toLocaleString()} entries!`);
+      }
+    } catch (e: any) {
+      this.showToast(`Pivot export failed: ${e.message || e}`);
+    }
+  }
+
+  async exportBreakdownPairs(primaryCol: string, secondaryCol: string) {
+    try {
+      const pClean = primaryCol.replace(/[^a-zA-Z0-9_]/g, "_");
+      const sClean = secondaryCol.replace(/[^a-zA-Z0-9_]/g, "_");
+      const defaultName = `breakdown_${pClean}_by_${sClean}_${Date.now()}.csv`;
+      const path = await invoke<string | null>("pick_export_file", { defaultName, isJson: false });
+      if (path) {
+        this.showToast(`Exporting complete 3-column breakdown to ${path}...`);
+        const count = await invoke<number>("export_breakdown_pairs", {
+          primaryCol,
+          secondaryCol,
+          exportPath: path,
+          filterText: this.searchFilter || null,
+        });
+        this.showToast(`Successfully exported ${count.toLocaleString()} distinct pairs to CSV!`);
+      }
+    } catch (e: any) {
+      this.showToast(`Breakdown export failed: ${e.message || e}`);
+    }
+  }
+
   async exportData(isJson = false) {
     try {
       const ext = isJson ? "json" : "csv";
@@ -383,22 +455,77 @@ export class FeedLensState {
     }
   }
 
-  async exportColumnFrequency(columnName: string) {
+  async exportColumnFrequency(columnName: string, useFilter = false, customDefaultName?: string) {
     try {
       const cleanCol = columnName.replace(/[^a-zA-Z0-9_]/g, "_");
-      const defaultName = `${cleanCol}_frequency_${Date.now()}.csv`;
+      const defaultName = customDefaultName || `${cleanCol}_unique_${Date.now()}.csv`;
       const path = await invoke<string | null>("pick_export_file", { defaultName, isJson: false });
       if (path) {
-        this.showToast(`Exporting frequency for ${columnName}...`);
+        this.showToast(`Exporting unique values for ${columnName}...`);
         const count = await invoke<number>("export_column_frequency", {
           columnName,
           exportPath: path,
+          filterText: useFilter ? (this.searchFilter || null) : null,
         });
         this.showToast(`Exported ${count.toLocaleString()} unique values to CSV!`);
       }
     } catch (e: any) {
       this.showToast(`Frequency export failed: ${e.message || e}`);
     }
+  }
+
+  async exportUniqueCompanies(useFilter = true) {
+    const cols = (this.tableData?.columns && this.tableData.columns.length > 0)
+      ? this.tableData.columns
+      : this.completeness.map((c) => c.original_name || c.column_name);
+
+    if (!cols || cols.length === 0) {
+      this.showToast("No columns available to export.");
+      return;
+    }
+
+    // High-priority company column candidates
+    const directCandidates = [
+      "source.name",
+      "source_name",
+      "company",
+      "company_name",
+      "employer",
+      "employer_name",
+      "brand_name",
+      "brand",
+      "name",
+    ];
+
+    let compCol = cols.find((c) => {
+      const low = c.toLowerCase();
+      return directCandidates.includes(low);
+    });
+
+    // Fallback: search for columns containing company/employer or ending with .name / _name
+    if (!compCol) {
+      compCol = cols.find((c) => {
+        const low = c.toLowerCase();
+        return (
+          (low.includes("company") ||
+            low.includes("employer") ||
+            low.endsWith(".name") ||
+            low.endsWith("_name")) &&
+          !low.includes("user") &&
+          !low.includes("file") &&
+          !low.includes("first") &&
+          !low.includes("last")
+        );
+      });
+    }
+
+    if (!compCol) {
+      this.showToast("Could not find a company column in this feed.");
+      return;
+    }
+
+    const defaultName = `unique_companies_${Date.now()}.csv`;
+    await this.exportColumnFrequency(compCol, useFilter, defaultName);
   }
 }
 

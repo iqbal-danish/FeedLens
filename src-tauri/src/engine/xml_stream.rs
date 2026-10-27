@@ -45,7 +45,16 @@ pub fn strip_namespace(name: &str) -> &str {
 
 pub fn is_description_tag(tag: &str) -> bool {
     let lower = tag.to_lowercase();
-    lower.contains("description") || lower == "body" || lower == "content" || lower == "summary" || lower == "details"
+    lower.contains("description")
+        || lower == "body"
+        || lower == "content"
+        || lower == "summary"
+        || lower == "details"
+        || lower == "post"
+        || lower == "job_post"
+        || lower == "jobpost"
+        || lower.contains("post_body")
+        || lower == "desc"
 }
 
 pub struct XmlRecord {
@@ -439,56 +448,71 @@ impl<R: BufRead> XmlStreamParser<R> {
                             fields.insert(field_key.clone(), current_text.trim().to_string());
                         }
 
-                        // Check if this closed element was a key-value pair container (e.g. <customfield><name>X</name><value>Y</value></customfield>)
-                        let base_prefix = tag_stack[..=pos].join(".");
-                        let base_prefix_lower = base_prefix.to_lowercase();
+                        // Fast O(1) check: only inspect for key-value pair container when the tag is likely a customfield/item
+                        if end_name.contains("custom")
+                            || end_name == "field"
+                            || end_name == "param"
+                            || end_name == "property"
+                            || end_name == "attribute"
+                            || end_name == "item"
+                            || end_name == "entry"
+                        {
+                            let base_prefix = tag_stack[..=pos].join(".");
 
-                        let mut name_key_to_remove = None;
-                        let mut name_val = None;
-                        let mut val_key_to_remove = None;
-                        let mut value_val = None;
+                            // Direct O(1) probe for name and value keys
+                            let name_suffixes = [".name", ".Name", ".key", ".Key", ".id", ".Id", ".param", ".field"];
+                            let val_suffixes = [".value", ".Value", ".val", ".Val", ".content", ".text"];
 
-                        for (k, v) in fields.iter() {
-                            let k_lower = k.to_lowercase();
-                            if k_lower.starts_with(&base_prefix_lower) && k.len() > base_prefix.len() {
-                                let suffix = &k_lower[base_prefix.len()..];
-                                if suffix == ".name" || suffix == ".key" || suffix == ".id" || suffix == ".param" || suffix == ".field" {
-                                    name_key_to_remove = Some(k.clone());
+                            let mut name_key_to_remove = None;
+                            let mut name_val = None;
+                            for s in &name_suffixes {
+                                let test_key = format!("{}{}", base_prefix, s);
+                                if let Some(v) = fields.get(&test_key) {
+                                    name_key_to_remove = Some(test_key);
                                     name_val = Some(v.clone());
-                                } else if suffix == ".value" || suffix == ".val" || suffix == ".content" || suffix == ".text" {
-                                    val_key_to_remove = Some(k.clone());
-                                    value_val = Some(v.clone());
+                                    break;
                                 }
                             }
-                        }
 
-                        if let (Some(nk), Some(nv)) = (name_key_to_remove, name_val) {
-                            fields.remove(&nk);
-                            if let Some(vk) = val_key_to_remove {
-                                fields.remove(&vk);
-                            }
-                            let val = value_val.unwrap_or_default();
-                            let n_clean = nv.trim();
-                            if !n_clean.is_empty() {
-                                let parent_path = if pos > 0 {
-                                    tag_stack[..pos].join(".")
-                                } else {
-                                    String::new()
-                                };
-                                let pivoted_key = if parent_path.is_empty() {
-                                    n_clean.to_string()
-                                } else {
-                                    format!("{parent_path}.{n_clean}")
-                                };
-                                if let Some(existing) = fields.get_mut(&pivoted_key) {
-                                    if !val.is_empty() {
-                                        if !existing.is_empty() {
-                                            existing.push_str(", ");
-                                        }
-                                        existing.push_str(&val);
+                            if let (Some(nk), Some(nv)) = (name_key_to_remove, name_val) {
+                                let mut val_key_to_remove = None;
+                                let mut value_val = None;
+                                for s in &val_suffixes {
+                                    let test_key = format!("{}{}", base_prefix, s);
+                                    if let Some(v) = fields.get(&test_key) {
+                                        val_key_to_remove = Some(test_key);
+                                        value_val = Some(v.clone());
+                                        break;
                                     }
-                                } else {
-                                    fields.insert(pivoted_key, val);
+                                }
+
+                                fields.remove(&nk);
+                                if let Some(vk) = val_key_to_remove {
+                                    fields.remove(&vk);
+                                }
+                                let val = value_val.unwrap_or_default();
+                                let n_clean = nv.trim();
+                                if !n_clean.is_empty() {
+                                    let parent_path = if pos > 0 {
+                                        tag_stack[..pos].join(".")
+                                    } else {
+                                        String::new()
+                                    };
+                                    let pivoted_key = if parent_path.is_empty() {
+                                        n_clean.to_string()
+                                    } else {
+                                        format!("{parent_path}.{n_clean}")
+                                    };
+                                    if let Some(existing) = fields.get_mut(&pivoted_key) {
+                                        if !val.is_empty() {
+                                            if !existing.is_empty() {
+                                                existing.push_str(", ");
+                                            }
+                                            existing.push_str(&val);
+                                        }
+                                    } else {
+                                        fields.insert(pivoted_key, val);
+                                    }
                                 }
                             }
                         }

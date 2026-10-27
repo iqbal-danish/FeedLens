@@ -32,9 +32,15 @@
             <span class="text-xs font-bold uppercase tracking-wider text-blue-400">
               Streaming Ingestion & DuckDB Vector Indexing
             </span>
-            <span class="text-xs font-mono font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">
-              {feedState.progress.percentage.toFixed(1)}%
-            </span>
+            {#if feedState.progress.total_bytes > 0}
+              <span class="text-xs font-mono font-bold text-white bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">
+                {feedState.progress.percentage.toFixed(1)}%
+              </span>
+            {:else}
+              <span class="text-xs font-mono font-bold text-cyan-300 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">
+                {formatBytes(feedState.progress.bytes_read)} streamed
+              </span>
+            {/if}
           </div>
           <p class="text-xs text-slate-400">
             {feedState.progress.current_phase} • <span class="font-mono text-white font-semibold">{feedState.progress.records_ingested.toLocaleString()}</span> records parsed
@@ -54,7 +60,7 @@
         <div class="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700/60 text-slate-300">
           <Clock class="w-3.5 h-3.5 text-blue-400" />
           <span>{formatTime(feedState.progress.elapsed_secs)}</span>
-          {#if feedState.progress.estimated_remaining_secs}
+          {#if feedState.progress.estimated_remaining_secs && feedState.progress.total_bytes > 0}
             <span class="text-slate-500">|</span>
             <span class="text-slate-400">ETA {formatTime(feedState.progress.estimated_remaining_secs)}</span>
           {/if}
@@ -71,12 +77,18 @@
       </div>
     </div>
 
-    <!-- Animated Smooth Progress Bar -->
-    <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700/60">
-      <div
-        class="bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 h-full rounded-full transition-all duration-150 ease-out"
-        style="width: {feedState.progress.percentage}%"
-      ></div>
+    <!-- Animated Smooth Progress Bar (with indeterminate streaming support) -->
+    <div class="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700/60 relative">
+      {#if feedState.progress.total_bytes > 0}
+        <div
+          class="bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-600 h-full rounded-full transition-all duration-150 ease-out"
+          style="width: {feedState.progress.percentage}%"
+        ></div>
+      {:else}
+        <div
+          class="bg-gradient-to-r from-blue-600 via-cyan-400 to-indigo-600 h-full rounded-full w-2/5 animate-pulse"
+        ></div>
+      {/if}
     </div>
   </div>
 {:else}

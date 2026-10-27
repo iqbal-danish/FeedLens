@@ -11,8 +11,8 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::db::{
     delete_recent_feed_entry, get_feedlens_data_dir, load_recent_catalog, save_recent_feed_entry,
-    ColumnCompleteness, DuplicateEntry, DuckDbManager, OverviewStats, QueryResultPage, RecentFeed,
-    ValueFrequency,
+    ColumnCompleteness, CrossTabulationResult, DuplicateEntry, DuckDbManager, OverviewStats,
+    QueryResultPage, RecentFeed, ValueFrequency,
 };
 use crate::engine::decompressor::{open_streaming_reader, open_streaming_url_reader};
 use crate::engine::json_stream::JsonStreamParser;
@@ -456,10 +456,53 @@ pub async fn export_column_frequency(
     state: State<'_, AppState>,
     column_name: String,
     export_path: String,
+    filter_text: Option<String>,
 ) -> Result<u64, String> {
     state
         .db
-        .export_column_frequency(&column_name, &export_path)
+        .export_column_frequency(&column_name, &export_path, filter_text)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_cross_tabulation(
+    state: State<'_, AppState>,
+    primary_col: String,
+    secondary_col: String,
+    limit: usize,
+    filter_text: Option<String>,
+) -> Result<CrossTabulationResult, String> {
+    state
+        .db
+        .get_cross_tabulation(&primary_col, &secondary_col, limit, filter_text)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn export_cross_tabulation(
+    state: State<'_, AppState>,
+    primary_col: String,
+    secondary_col: String,
+    export_path: String,
+    filter_text: Option<String>,
+) -> Result<u64, String> {
+    state
+        .db
+        .export_cross_tabulation(&primary_col, &secondary_col, &export_path, filter_text)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn export_breakdown_pairs(
+    state: State<'_, AppState>,
+    primary_col: String,
+    secondary_col: String,
+    export_path: String,
+    filter_text: Option<String>,
+) -> Result<u64, String> {
+    state
+        .db
+        .export_breakdown_pairs(&primary_col, &secondary_col, &export_path, filter_text)
         .map_err(|e| e.to_string())
 }
 

@@ -12,6 +12,9 @@
     Check,
     RotateCcw,
     Sparkles,
+    Building2,
+    ChevronDown,
+    Download,
   } from "@lucide/svelte";
 
   let searchInput = $state(feedState.searchFilter);
@@ -23,6 +26,60 @@
 
   // Column prioritization: Populated first is always turned on by default
   let orderColumnsByFill = $state(true);
+
+  // Unique Column Extraction Modal State
+  let showExportUniqueModal = $state(false);
+  let selectedExportCol = $state<string>("");
+  let exportColSearchQuery = $state("");
+  let applyFilterToExport = $state(true);
+
+  // Auto-initialize selectedExportCol with smart company candidate if not set
+  $effect(() => {
+    if (!selectedExportCol && feedState.tableData?.columns) {
+      const cols = feedState.tableData.columns;
+      const match = cols.find((c) => {
+        const low = c.toLowerCase();
+        return (
+          low === "source.name" ||
+          low === "source_name" ||
+          low === "company" ||
+          low === "name" ||
+          low === "brand_name"
+        );
+      });
+      selectedExportCol = match || cols[0] || "";
+    }
+  });
+
+  // Suggested company-related columns in this feed
+  let suggestedCompanyCols = $derived(() => {
+    if (!feedState.tableData?.columns) return [];
+    return feedState.tableData.columns.filter((c) => {
+      const low = c.toLowerCase();
+      return (
+        low.includes("name") ||
+        low.includes("company") ||
+        low.includes("brand") ||
+        low.includes("employer") ||
+        low.includes("source")
+      );
+    }).slice(0, 6);
+  });
+
+  // Filtered column list inside the selection modal
+  let modalFilteredCols = $derived(() => {
+    if (!feedState.tableData?.columns) return [];
+    const q = exportColSearchQuery.trim().toLowerCase();
+    if (!q) return feedState.tableData.columns;
+    return feedState.tableData.columns.filter((c) => c.toLowerCase().includes(q));
+  });
+
+  function triggerExportUnique() {
+    if (!selectedExportCol) return;
+    const defaultName = `unique_${selectedExportCol.replace(/[^a-zA-Z0-9_]/g, "_")}_${Date.now()}.csv`;
+    feedState.exportColumnFrequency(selectedExportCol, applyFilterToExport, defaultName);
+    showExportUniqueModal = false;
+  }
 
   function handleSearchKeydown(e: KeyboardEvent) {
     if (e.key === "Enter") {
@@ -55,7 +112,7 @@
     }).length;
   });
 
-  // Derived target column if missing: or populated: filter is active
+  // Derived target column if missing: or populated: or col:val filter is active
   let filterTargetCol = $derived(() => {
     if (!feedState.searchFilter) return null;
     const trimmed = feedState.searchFilter.trim();
@@ -64,6 +121,15 @@
     }
     if (trimmed.startsWith("populated:")) {
       return trimmed.slice("populated:".length).trim().toLowerCase();
+    }
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx > 0) {
+      const target = trimmed.slice(0, colonIdx).trim().toLowerCase().replace(/^[-!]/, "");
+      if ((target === "company" || target === "employer") && !feedState.tableData?.columns.some(c => c.toLowerCase() === target)) {
+        const match = feedState.tableData?.columns.find(c => c.toLowerCase() === "source.name" || c.toLowerCase() === "source_name" || c.toLowerCase() === "name");
+        if (match) return match.toLowerCase();
+      }
+      return target;
     }
     return null;
   });
@@ -246,6 +312,17 @@
         title="Sort columns by fill rate so 100% populated fields appear on the left"
       >
         <span>Populated First</span>
+      </button>
+
+      <!-- Select & Export Unique Column Button -->
+      <button
+        onclick={() => (showExportUniqueModal = true)}
+        class="px-3 py-2 rounded-xl text-xs font-semibold text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-800/60 transition cursor-pointer flex items-center gap-1.5 shrink-0 shadow-sm"
+        title="Select any company or custom column to export deduplicated values"
+      >
+        <Building2 class="w-3.5 h-3.5 text-cyan-400" />
+        <span>Export Unique: <strong class="text-white font-mono">{selectedExportCol || "Company"}</strong></span>
+        <ChevronDown class="w-3 h-3 text-cyan-400/80" />
       </button>
     </div>
 
@@ -537,3 +614,130 @@
 
   </div>
 </div>
+
+<!-- Select Column & Export Unique Values Modal -->
+{#if showExportUniqueModal}
+  <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-150">
+    <div class="glass-modal-panel rounded-3xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden border border-white/15">
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center">
+            <Building2 class="w-4 h-4 text-cyan-300" />
+          </div>
+          <div>
+            <h3 class="text-sm font-bold text-white tracking-tight">Select Column to Extract</h3>
+            <p class="text-[11.5px] text-slate-400">Choose which field to deduplicate and export</p>
+          </div>
+        </div>
+        <button
+          onclick={() => (showExportUniqueModal = false)}
+          class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+          title="Close"
+        >
+          <X class="w-4 h-4" />
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-5 space-y-4 max-h-[70vh] overflow-y-auto font-sans">
+        <!-- Quick Suggested Company Chips -->
+        {#if suggestedCompanyCols().length > 0}
+          <div>
+            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+              Suggested Company Fields in this Feed
+            </label>
+            <div class="flex flex-wrap gap-1.5">
+              {#each suggestedCompanyCols() as sug}
+                <button
+                  type="button"
+                  onclick={() => (selectedExportCol = sug)}
+                  class="px-2.5 py-1 rounded-lg text-xs font-mono transition cursor-pointer border {selectedExportCol === sug
+                    ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 font-bold'
+                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}"
+                >
+                  {sug}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Searchable Column Selector -->
+        <div>
+          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+            All Feed Columns ({feedState.tableData?.columns.length || 0})
+          </label>
+          <div class="relative mb-2">
+            <Search class="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search columns..."
+              bind:value={exportColSearchQuery}
+              class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono transition"
+            />
+          </div>
+
+          <!-- Scrollable Column Picker -->
+          <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl max-h-48 overflow-y-auto divide-y divide-slate-900 font-mono text-xs">
+            {#each modalFilteredCols() as col}
+              {@const isSelected = selectedExportCol === col}
+              <button
+                type="button"
+                onclick={() => (selectedExportCol = col)}
+                class="w-full text-left px-3.5 py-2 flex items-center justify-between transition cursor-pointer {isSelected
+                  ? 'bg-cyan-950/60 text-cyan-200 font-bold'
+                  : 'text-slate-300 hover:bg-slate-900 hover:text-white'}"
+              >
+                <span>{col}</span>
+                {#if isSelected}
+                  <Check class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                {/if}
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <!-- Filter Scope Toggle -->
+        {#if feedState.searchFilter}
+          <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+            <div class="space-y-0.5">
+              <span class="text-xs font-semibold text-slate-200">Apply Active Filter</span>
+              <p class="text-[11px] text-slate-400 font-mono truncate max-w-[280px]">
+                {feedState.searchFilter}
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              bind:checked={applyFilterToExport}
+              class="w-4 h-4 rounded border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer accent-cyan-500"
+            />
+          </div>
+        {/if}
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-5 py-3.5 bg-slate-950/80 border-t border-white/10 flex items-center justify-between">
+        <span class="text-xs text-slate-400 font-sans">
+          Target: <strong class="text-white font-mono">{selectedExportCol || "None"}</strong>
+        </span>
+        <div class="flex items-center gap-2">
+          <button
+            onclick={() => (showExportUniqueModal = false)}
+            class="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            onclick={triggerExportUnique}
+            disabled={!selectedExportCol}
+            class="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 transition cursor-pointer shadow-md shadow-cyan-600/20 flex items-center gap-1.5"
+          >
+            <Download class="w-3.5 h-3.5 text-white" />
+            <span>Export CSV</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}

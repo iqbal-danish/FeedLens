@@ -76,3 +76,18 @@ export interface RecentFeed {
   db_path: string;
   analyzed_at: string;
 }
+
+export interface CrossTabulationRow {
+  primary_value: string;
+  counts: Record<string, number>;
+  total: number;
+}
+
+export interface CrossTabulationResult {
+  primary_col: string;
+  secondary_col: string;
+  secondary_values: string[];
+  rows: CrossTabulationRow[];
+  total_primary_uniques: number;
+  total_records: number;
+}

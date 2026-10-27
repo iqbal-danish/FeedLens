@@ -57,6 +57,23 @@ pub struct QueryResultPage {
     pub total_pages: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossTabulationResult {
+    pub primary_col: String,
+    pub secondary_col: String,
+    pub secondary_values: Vec<String>,
+    pub rows: Vec<CrossTabulationRow>,
+    pub total_primary_uniques: usize,
+    pub total_records: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossTabulationRow {
+    pub primary_value: String,
+    pub counts: HashMap<String, u64>,
+    pub total: u64,
+}
+
 pub struct DuckDbManager {
     conn: Arc<Mutex<Connection>>,
     known_columns: Arc<Mutex<Vec<String>>>,
@@ -303,43 +320,160 @@ impl DuckDbManager {
         "Text".to_string()
     }
 
-    /// Helper to build WHERE clause supporting missing:col and populated:col
+    /// Helper to tokenize search input respecting quoted phrases
+    pub fn tokenize_search_query(text: &str) -> Vec<String> {
+        let mut tokens = Vec::new();
+        let mut current = String::new();
+        let mut in_quotes = false;
+
+        for ch in text.chars() {
+            if ch == '"' {
+                in_quotes = !in_quotes;
+            } else if ch.is_whitespace() && !in_quotes {
+                if !current.is_empty() {
+                    tokens.push(current);
+                    current = String::new();
+                }
+            } else {
+                current.push(ch);
+            }
+        }
+        if !current.is_empty() {
+            tokens.push(current);
+        }
+        tokens
+    }
+
+    /// Helper to resolve target column name with fuzzy matching and common domain aliases
+    pub fn resolve_column_name(target: &str, cols: &[String]) -> Option<String> {
+        let sanitized = Self::sanitize_column_name(target);
+        let target_low = target.to_lowercase();
+        let sanitized_low = sanitized.to_lowercase();
+
+        // 1. Exact match (case-insensitive)
+        if let Some(c) = cols.iter().find(|c| c.to_lowercase() == target_low || c.to_lowercase() == sanitized_low) {
+            return Some(c.clone());
+        }
+
+        // 2. Suffix match (e.g. "job_remote" or "job.remote" for "remote")
+        if let Some(c) = cols.iter().find(|c| {
+            let clow = c.to_lowercase();
+            clow.ends_with(&format!("_{}", sanitized_low)) || clow.ends_with(&format!(".{}", sanitized_low))
+        }) {
+            return Some(c.clone());
+        }
+
+        // 3. Known domain aliases for job feeds
+        let aliases: &[(&str, &[&str])] = &[
+            ("company", &["source_name", "source.name", "name", "brand_name", "company", "company_name", "employer", "brand"]),
+            ("company_name", &["source_name", "source.name", "name", "brand_name", "company", "company_name", "employer", "brand"]),
+            ("employer", &["source_name", "source.name", "name", "brand_name", "employer", "company", "company_name"]),
+            ("name", &["source_name", "source.name", "name", "brand_name", "company", "company_name", "employer"]),
+            ("brand", &["brand_name", "source_name", "name", "company"]),
+            ("remote", &["remote", "work_model", "is_remote", "telecommute"]),
+            ("work_model", &["work_model", "remote", "is_remote"]),
+            ("title", &["title", "job_title", "role", "jobtitle", "headline"]),
+            ("city", &["city", "job_city", "location", "place"]),
+            ("state", &["state", "region", "province"]),
+            ("country", &["country", "country_code", "nation"]),
+            ("salary", &["salary", "pay", "compensation", "wage"]),
+            ("id", &["id", "job_id", "refcode", "jobid", "req_id", "reference"]),
+            ("refcode", &["refcode", "id", "job_id", "jobid", "req_id", "reference"]),
+        ];
+
+        for (alias_key, candidates) in aliases {
+            if target_low == *alias_key {
+                for cand in *candidates {
+                    if let Some(c) = cols.iter().find(|c| c.to_lowercase() == *cand || c.to_lowercase().ends_with(&format!("_{}", cand))) {
+                        return Some(c.clone());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Helper to build WHERE clause supporting:
+    /// - col:val / col=val (e.g. remote:true, company:Balfour, city:London)
+    /// - col!=val / -col:val / !col:val
+    /// - missing:col / is:empty:col
+    /// - populated:col / is:valid:col
+    /// - multi-token combinations (e.g. remote:true name:Balfour)
+    /// - free-text global search across columns
     pub fn build_filter_where_clause(filter_text: &Option<String>, cols: &[String]) -> String {
         if let Some(ref text) = filter_text {
             let trimmed = text.trim();
-            if !trimmed.is_empty() {
-                if let Some(col_target) = trimmed.strip_prefix("missing:").or_else(|| trimmed.strip_prefix("is:empty:")) {
+            if trimmed.is_empty() {
+                return String::new();
+            }
+
+            let tokens = Self::tokenize_search_query(trimmed);
+            let mut and_conditions = Vec::new();
+
+            for token in tokens {
+                let trimmed_token = token.trim();
+                if trimmed_token.is_empty() {
+                    continue;
+                }
+
+                if let Some(col_target) = trimmed_token.strip_prefix("missing:").or_else(|| trimmed_token.strip_prefix("is:empty:")) {
                     let target = col_target.trim();
-                    let sanitized = Self::sanitize_column_name(target);
-                    let actual_col = if cols.contains(&sanitized) {
-                        Some(sanitized)
-                    } else {
-                        cols.iter().find(|c| c.eq_ignore_ascii_case(target) || c.eq_ignore_ascii_case(&sanitized)).cloned()
-                    };
+                    let actual_col = Self::resolve_column_name(target, cols);
                     if let Some(c) = actual_col {
-                        return format!("WHERE \"{}\" IS NULL OR TRIM(\"{}\") = ''", c, c);
+                        and_conditions.push(format!("(\"{}\" IS NULL OR TRIM(\"{}\") = '')", c, c));
                     }
-                } else if let Some(col_target) = trimmed.strip_prefix("populated:").or_else(|| trimmed.strip_prefix("is:valid:")) {
+                } else if let Some(col_target) = trimmed_token.strip_prefix("populated:").or_else(|| trimmed_token.strip_prefix("is:valid:")) {
                     let target = col_target.trim();
-                    let sanitized = Self::sanitize_column_name(target);
-                    let actual_col = if cols.contains(&sanitized) {
-                        Some(sanitized)
-                    } else {
-                        cols.iter().find(|c| c.eq_ignore_ascii_case(target) || c.eq_ignore_ascii_case(&sanitized)).cloned()
-                    };
+                    let actual_col = Self::resolve_column_name(target, cols);
                     if let Some(c) = actual_col {
-                        return format!("WHERE \"{}\" IS NOT NULL AND TRIM(\"{}\") != ''", c, c);
+                        and_conditions.push(format!("(\"{}\" IS NOT NULL AND TRIM(\"{}\") != '')", c, c));
+                    }
+                } else if let Some((raw_col, raw_val)) = trimmed_token.split_once(':').or_else(|| trimmed_token.split_once('=')) {
+                    let col_name = raw_col.trim().trim_start_matches('-').trim_start_matches('!');
+                    let is_negated = raw_col.trim().starts_with('-') || raw_col.trim().starts_with('!');
+                    let val = raw_val.trim().trim_matches('"');
+                    let escaped_val = val.replace('\'', "''");
+
+                    if let Some(c) = Self::resolve_column_name(col_name, cols) {
+                        let cond = if val.eq_ignore_ascii_case("true") || val == "1" || val.eq_ignore_ascii_case("yes") {
+                            format!("(LOWER(TRIM(CAST(\"{}\" AS VARCHAR))) IN ('true', '1', 'yes') OR CAST(\"{}\" AS VARCHAR) ILIKE '%true%')", c, c)
+                        } else if val.eq_ignore_ascii_case("false") || val == "0" || val.eq_ignore_ascii_case("no") {
+                            format!("(\"{}\" IS NULL OR LOWER(TRIM(CAST(\"{}\" AS VARCHAR))) IN ('false', '0', 'no', '') OR CAST(\"{}\" AS VARCHAR) ILIKE '%false%')", c, c, c)
+                        } else {
+                            format!("CAST(\"{}\" AS VARCHAR) ILIKE '%{}%'", c, escaped_val)
+                        };
+
+                        if is_negated {
+                            and_conditions.push(format!("NOT ({})", cond));
+                        } else {
+                            and_conditions.push(cond);
+                        }
+                    } else {
+                        // Unmatched column prefix, treat token as free text
+                        let escaped = trimmed_token.replace('\'', "''");
+                        let conditions: Vec<String> = cols
+                            .iter()
+                            .map(|c| format!("CAST(\"{}\" AS VARCHAR) ILIKE '%{}%'", c, escaped))
+                            .collect();
+                        if !conditions.is_empty() {
+                            and_conditions.push(format!("({})", conditions.join(" OR ")));
+                        }
                     }
                 } else {
-                    let escaped = trimmed.replace('\'', "''");
+                    let escaped = trimmed_token.replace('\'', "''");
                     let conditions: Vec<String> = cols
                         .iter()
                         .map(|c| format!("CAST(\"{}\" AS VARCHAR) ILIKE '%{}%'", c, escaped))
                         .collect();
                     if !conditions.is_empty() {
-                        return format!("WHERE {}", conditions.join(" OR "));
+                        and_conditions.push(format!("({})", conditions.join(" OR ")));
                     }
                 }
+            }
+
+            if !and_conditions.is_empty() {
+                return format!("WHERE {}", and_conditions.join(" AND "));
             }
         }
         String::new()
@@ -360,93 +494,101 @@ impl DuckDbManager {
 
         let mut results = Vec::new();
 
-        for col in cols {
-            let original_name = mapping.get(&col).cloned().unwrap_or_else(|| col.clone());
-
-            // Use exact COUNT(DISTINCT) for precision and vectorized string length profiling
-            let query = format!(
-                "SELECT 
-                    COUNT(\"{col}\") as non_nulls,
+        // Process columns in batches of 8 to minimize table scans (e.g., 176 columns -> 22 scans instead of 176)
+        for chunk in cols.chunks(8) {
+            let mut select_clauses = Vec::with_capacity(chunk.len());
+            for col in chunk {
+                select_clauses.push(format!(
+                    "COUNT(\"{col}\") as non_nulls,
                     COUNT(CASE WHEN \"{col}\" = '' OR TRIM(\"{col}\") = '' THEN 1 END) as empty_str,
                     COUNT(DISTINCT \"{col}\") as uniques,
                     COALESCE(MIN(LENGTH(TRIM(\"{col}\"))), 0) as min_len,
                     COALESCE(MAX(LENGTH(TRIM(\"{col}\"))), 0) as max_len,
-                    COALESCE(ROUND(AVG(LENGTH(TRIM(\"{col}\"))), 1), 0.0) as avg_len
-                 FROM feed_records;"
-            );
+                    COALESCE(ROUND(AVG(LENGTH(TRIM(\"{col}\"))), 1), 0.0) as avg_len"
+                ));
+            }
 
-            let (non_nulls, empty_str, uniques, min_len, max_len, avg_len): (u64, u64, u64, u64, u64, f64) = 
-                if let Ok(mut stmt) = conn.prepare(&query) {
-                    stmt.query_row([], |row| {
-                        Ok((
-                            row.get(0)?,
-                            row.get(1)?,
-                            row.get(2)?,
-                            row.get(3)?,
-                            row.get(4)?,
-                            row.get(5)?,
-                        ))
-                    }).unwrap_or((0, 0, 0, 0, 0, 0.0))
+            let batch_query = format!("SELECT {} FROM feed_records;", select_clauses.join(", "));
+            let metrics_row: Vec<(u64, u64, u64, u64, u64, f64)> = if let Ok(mut stmt) = conn.prepare(&batch_query) {
+                stmt.query_row([], |row| {
+                    let mut vals = Vec::with_capacity(chunk.len());
+                    for i in 0..chunk.len() {
+                        let base = i * 6;
+                        let non_nulls: u64 = row.get(base)?;
+                        let empty_str: u64 = row.get(base + 1)?;
+                        let uniques: u64 = row.get(base + 2)?;
+                        let min_len: u64 = row.get(base + 3)?;
+                        let max_len: u64 = row.get(base + 4)?;
+                        let avg_len: f64 = row.get(base + 5)?;
+                        vals.push((non_nulls, empty_str, uniques, min_len, max_len, avg_len));
+                    }
+                    Ok(vals)
+                }).unwrap_or_else(|_| vec![(0, 0, 0, 0, 0, 0.0); chunk.len()])
+            } else {
+                vec![(0, 0, 0, 0, 0, 0.0); chunk.len()]
+            };
+
+            for (idx, col) in chunk.iter().enumerate() {
+                let original_name = mapping.get(col).cloned().unwrap_or_else(|| col.clone());
+                let (non_nulls, empty_str, uniques, min_len, max_len, avg_len) = metrics_row.get(idx).copied().unwrap_or((0, 0, 0, 0, 0, 0.0));
+
+                let valid_count = non_nulls.saturating_sub(empty_str);
+                let missing_count = total.saturating_sub(valid_count);
+                let fill_rate = if total > 0 { (valid_count as f64 / total as f64) * 100.0 } else { 0.0 };
+
+                // Fetch top 10 sample values with index scan
+                let sample_query = format!(
+                    "SELECT \"{col}\" FROM feed_records WHERE \"{col}\" IS NOT NULL AND TRIM(\"{col}\") != '' LIMIT 10;"
+                );
+                let samples: Vec<String> = if let Ok(mut sample_stmt) = conn.prepare(&sample_query) {
+                    sample_stmt
+                        .query_map([], |row| row.get(0))
+                        .map(|iter| iter.filter_map(|r| r.ok()).collect())
+                        .unwrap_or_default()
                 } else {
-                    (0, 0, 0, 0, 0, 0.0)
+                    Vec::new()
                 };
 
-            let valid_count = non_nulls.saturating_sub(empty_str);
-            let missing_count = total.saturating_sub(valid_count);
-            let fill_rate = if total > 0 { (valid_count as f64 / total as f64) * 100.0 } else { 0.0 };
+                let inferred_type = Self::infer_data_type(&original_name, &samples);
+                let low_name = original_name.to_lowercase();
+                let is_id_name = low_name == "id"
+                    || low_name == "refcode"
+                    || low_name == "job_id"
+                    || low_name == "jobid"
+                    || low_name.ends_with(".id")
+                    || low_name.ends_with(".refcode")
+                    || low_name.ends_with(".job_id")
+                    || low_name.contains("reference")
+                    || low_name.contains("requisition");
 
-            // Fetch top 10 sample values with index scan
-            let sample_query = format!(
-                "SELECT \"{col}\" FROM feed_records WHERE \"{col}\" IS NOT NULL AND TRIM(\"{col}\") != '' LIMIT 10;"
-            );
-            let samples: Vec<String> = if let Ok(mut sample_stmt) = conn.prepare(&sample_query) {
-                sample_stmt
-                    .query_map([], |row| row.get(0))
-                    .map(|iter| iter.filter_map(|r| r.ok()).collect())
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            };
+                let is_identifier_like = is_id_name || (inferred_type == "Identifier" && !low_name.contains("country") && !low_name.contains("currency"));
 
-            let inferred_type = Self::infer_data_type(&original_name, &samples);
-            let low_name = original_name.to_lowercase();
-            let is_id_name = low_name == "id"
-                || low_name == "refcode"
-                || low_name == "job_id"
-                || low_name == "jobid"
-                || low_name.ends_with(".id")
-                || low_name.ends_with(".refcode")
-                || low_name.ends_with(".job_id")
-                || low_name.contains("reference")
-                || low_name.contains("requisition");
+                let is_candidate_key = if is_identifier_like {
+                    fill_rate >= 99.0 && (uniques as f64 / total as f64) >= 0.95
+                } else if inferred_type != "URL" && inferred_type != "HTML" && inferred_type != "Date" && inferred_type != "Boolean" {
+                    valid_count == total && uniques >= total && valid_count > 0
+                } else {
+                    false
+                };
 
-            let is_identifier_like = is_id_name || (inferred_type == "Identifier" && !low_name.contains("country") && !low_name.contains("currency"));
-
-            let is_candidate_key = if is_identifier_like {
-                fill_rate >= 99.0 && (uniques as f64 / total as f64) >= 0.95
-            } else if inferred_type != "URL" && inferred_type != "HTML" && inferred_type != "Date" && inferred_type != "Boolean" {
-                valid_count == total && uniques >= total && valid_count > 0
-            } else {
-                false
-            };
-
-            results.push(ColumnCompleteness {
-                column_name: col,
-                original_name,
-                total_records: total,
-                non_null_count: non_nulls,
-                empty_count: missing_count,
-                valid_count,
-                fill_rate,
+                results.push(ColumnCompleteness {
+                    column_name: col.clone(),
+                    original_name,
+                    total_records: total,
+                    non_null_count: non_nulls,
+                    empty_count: missing_count,
+                    valid_count,
+                    fill_rate,
                 unique_count: uniques,
                 sample_values: samples,
                 min_length: min_len,
                 max_length: max_len,
                 avg_length: avg_len,
                 inferred_type,
-                is_candidate_key,
-                has_collision_risk: false,
-            });
+                    is_candidate_key,
+                    has_collision_risk: false,
+                });
+            }
         }
 
         // Sort by fill_rate descending
@@ -621,34 +763,311 @@ impl DuckDbManager {
         Ok(count)
     }
 
-    /// Export frequency breakdown of a single column to CSV
-    pub fn export_column_frequency(&self, col_name: &str, export_path: &str) -> Result<u64> {
+    /// Export frequency breakdown of a single column to CSV (supporting search filters)
+    pub fn export_column_frequency(&self, col_name: &str, export_path: &str, filter_text: Option<String>) -> Result<u64> {
+        let cols = self.known_columns.lock().clone();
         let sanitized = Self::sanitize_column_name(col_name);
+        let conn = self.conn.lock();
+        let clean_path = export_path.replace('\\', "/").replace('\'', "''");
+        let where_clause = Self::build_filter_where_clause(&filter_text, &cols);
+
+        let copy_sql = format!(
+            "COPY (
+                WITH stats AS (
+                    SELECT COUNT(*) as total_count FROM feed_records {where_clause}
+                ),
+                freq AS (
+                    SELECT 
+                        COALESCE(CAST(\"{sanitized}\" AS VARCHAR), '[NULL / EMPTY]') as \"{col_name}\",
+                        COUNT(*) as count,
+                        ROUND(COUNT(*) * 100.0 / NULLIF((SELECT total_count FROM stats), 0), 2) as percentage
+                    FROM feed_records
+                    {where_clause}
+                    GROUP BY \"{sanitized}\"
+                    ORDER BY count DESC
+                )
+                SELECT * FROM freq
+            ) TO '{clean_path}' (HEADER, DELIMITER ',');",
+            col_name = col_name.replace('"', "\"\"")
+        );
+        conn.execute_batch(&copy_sql)?;
+
+        let mut stmt = conn.prepare(&format!("SELECT COUNT(DISTINCT \"{}\") FROM feed_records {};", sanitized, where_clause))?;
+        let count: u64 = stmt.query_row([], |row| row.get(0)).unwrap_or(0);
+        Ok(count)
+    }
+
+    /// Ultra-fast dynamic cross-tabulation / pivot query (e.g. Company x Remote or Company x Status)
+    pub fn get_cross_tabulation(
+        &self,
+        primary_col: &str,
+        secondary_col: &str,
+        limit: usize,
+        filter_text: Option<String>,
+    ) -> Result<CrossTabulationResult> {
+        let cols = self.known_columns.lock().clone();
+        let pri_sanitized = Self::sanitize_column_name(primary_col);
+        let sec_sanitized = Self::sanitize_column_name(secondary_col);
+        let where_clause = Self::build_filter_where_clause(&filter_text, &cols);
+        let conn = self.conn.lock();
+
+        // Total records matching filter
+        let mut tot_stmt = conn.prepare(&format!("SELECT COUNT(*) FROM feed_records {};", where_clause))?;
+        let total_records: u64 = tot_stmt.query_row([], |row| row.get(0)).unwrap_or(0);
+
+        // Total unique primary values
+        let mut uniq_stmt = conn.prepare(&format!(
+            "SELECT COUNT(DISTINCT \"{}\") FROM feed_records {};",
+            pri_sanitized, where_clause
+        ))?;
+        let total_primary_uniques: usize = uniq_stmt.query_row([], |row| row.get(0)).unwrap_or(0);
+
+        // Get top distinct secondary values (up to 20 to avoid excessive columns)
+        let sec_val_query = format!(
+            "SELECT COALESCE(NULLIF(TRIM(\"{}\"), ''), '[Empty]') as val, COUNT(*) as cnt
+             FROM feed_records {}
+             GROUP BY val
+             ORDER BY cnt DESC
+             LIMIT 20;",
+            sec_sanitized, where_clause
+        );
+
+        let mut sec_stmt = conn.prepare(&sec_val_query)?;
+        let sec_vals: Vec<String> = sec_stmt
+            .query_map([], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        if sec_vals.is_empty() || total_records == 0 {
+            return Ok(CrossTabulationResult {
+                primary_col: primary_col.to_string(),
+                secondary_col: secondary_col.to_string(),
+                secondary_values: Vec::new(),
+                rows: Vec::new(),
+                total_primary_uniques: 0,
+                total_records: 0,
+            });
+        }
+
+        // Check if there are other distinct secondary values beyond the top 20
+        let mut sec_cnt_stmt = conn.prepare(&format!(
+            "SELECT COUNT(DISTINCT COALESCE(NULLIF(TRIM(\"{}\"), ''), '[Empty]')) FROM feed_records {};",
+            sec_sanitized, where_clause
+        ))?;
+        let total_sec_uniques: usize = sec_cnt_stmt.query_row([], |row| row.get(0)).unwrap_or(0);
+        let has_other = total_sec_uniques > sec_vals.len();
+
+        let mut select_clauses = Vec::new();
+        select_clauses.push(format!(
+            "COALESCE(NULLIF(TRIM(\"{}\"), ''), '[Unknown]') as pri_val",
+            pri_sanitized
+        ));
+
+        for val in &sec_vals {
+            let escaped_val = val.replace('\'', "''");
+            if val == "[Empty]" {
+                select_clauses.push(format!(
+                    "COUNT(CASE WHEN \"{}\" IS NULL OR TRIM(\"{}\") = '' THEN 1 END)",
+                    sec_sanitized, sec_sanitized
+                ));
+            } else {
+                select_clauses.push(format!(
+                    "COUNT(CASE WHEN TRIM(\"{}\") = '{}' THEN 1 END)",
+                    sec_sanitized, escaped_val
+                ));
+            }
+        }
+        select_clauses.push("COUNT(*) as tot".to_string());
+
+        let query = format!(
+            "SELECT {}
+             FROM feed_records
+             {}
+             GROUP BY \"{}\"
+             ORDER BY tot DESC
+             LIMIT {};",
+            select_clauses.join(", "),
+            where_clause,
+            pri_sanitized,
+            limit
+        );
+
+        let mut stmt = conn.prepare(&query)?;
+        let sec_vals_clone = sec_vals.clone();
+        let num_sec = sec_vals.len();
+
+        let rows = stmt.query_map([], |row| {
+            let pri_val: String = row.get(0)?;
+            let mut counts = HashMap::new();
+            let mut top_sum: u64 = 0;
+            for i in 0..num_sec {
+                let cnt: u64 = row.get(i + 1)?;
+                counts.insert(sec_vals_clone[i].clone(), cnt);
+                top_sum += cnt;
+            }
+            let total: u64 = row.get(num_sec + 1)?;
+            if has_other {
+                let other_cnt = total.saturating_sub(top_sum);
+                counts.insert("[Other]".to_string(), other_cnt);
+            }
+            Ok(CrossTabulationRow {
+                primary_value: pri_val,
+                counts,
+                total,
+            })
+        })?;
+
+        let mut result_rows = Vec::new();
+        for r in rows {
+            result_rows.push(r?);
+        }
+
+        let mut final_sec_vals = sec_vals;
+        if has_other {
+            final_sec_vals.push("[Other]".to_string());
+        }
+
+        Ok(CrossTabulationResult {
+            primary_col: primary_col.to_string(),
+            secondary_col: secondary_col.to_string(),
+            secondary_values: final_sec_vals,
+            rows: result_rows,
+            total_primary_uniques,
+            total_records,
+        })
+    }
+
+    /// Fast native export of dynamic cross-tabulation / pivot to CSV
+    pub fn export_cross_tabulation(
+        &self,
+        primary_col: &str,
+        secondary_col: &str,
+        export_path: &str,
+        filter_text: Option<String>,
+    ) -> Result<u64> {
+        let cols = self.known_columns.lock().clone();
+        let pri_sanitized = Self::sanitize_column_name(primary_col);
+        let sec_sanitized = Self::sanitize_column_name(secondary_col);
+        let where_clause = Self::build_filter_where_clause(&filter_text, &cols);
+        let conn = self.conn.lock();
+        let clean_path = export_path.replace('\\', "/").replace('\'', "''");
+
+        // 1. Get top distinct secondary values
+        let sec_val_query = format!(
+            "SELECT COALESCE(NULLIF(TRIM(\"{}\"), ''), '[Empty]') as val, COUNT(*) as cnt
+             FROM feed_records {}
+             GROUP BY val
+             ORDER BY cnt DESC
+             LIMIT 20;",
+            sec_sanitized, where_clause
+        );
+
+        let mut sec_stmt = conn.prepare(&sec_val_query)?;
+        let sec_vals: Vec<String> = sec_stmt
+            .query_map([], |row| row.get(0))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        if sec_vals.is_empty() {
+            return Ok(0);
+        }
+
+        let mut sec_cnt_stmt = conn.prepare(&format!(
+            "SELECT COUNT(DISTINCT COALESCE(NULLIF(TRIM(\"{}\"), ''), '[Empty]')) FROM feed_records {};",
+            sec_sanitized, where_clause
+        ))?;
+        let total_sec_uniques: usize = sec_cnt_stmt.query_row([], |row| row.get(0)).unwrap_or(0);
+        let has_other = total_sec_uniques > sec_vals.len();
+
+        let mut select_clauses = Vec::new();
+        select_clauses.push(format!(
+            "COALESCE(NULLIF(TRIM(\"{}\"), ''), '[Unknown]') as \"{}\"",
+            pri_sanitized, primary_col.replace('"', "\"\"")
+        ));
+
+        let mut count_exprs = Vec::new();
+        for val in &sec_vals {
+            let escaped_val = val.replace('\'', "''");
+            let col_alias = val.replace('"', "\"\"");
+            let expr = if val == "[Empty]" {
+                format!("COUNT(CASE WHEN \"{}\" IS NULL OR TRIM(\"{}\") = '' THEN 1 END)", sec_sanitized, sec_sanitized)
+            } else {
+                format!("COUNT(CASE WHEN TRIM(\"{}\") = '{}' THEN 1 END)", sec_sanitized, escaped_val)
+            };
+            select_clauses.push(format!("{} as \"{}\"", expr, col_alias));
+            count_exprs.push(expr);
+        }
+
+        if has_other && !count_exprs.is_empty() {
+            select_clauses.push(format!("(COUNT(*) - ({})) as \"[Other]\"", count_exprs.join(" + ")));
+        }
+        select_clauses.push("COUNT(*) as \"Total\"".to_string());
+
+        let copy_sql = format!(
+            "COPY (
+                SELECT {}
+                FROM feed_records
+                {}
+                GROUP BY \"{}\"
+                ORDER BY \"Total\" DESC
+            ) TO '{}' (HEADER, DELIMITER ',');",
+            select_clauses.join(", "),
+            where_clause,
+            pri_sanitized,
+            clean_path
+        );
+
+        conn.execute_batch(&copy_sql)?;
+
+        let mut count_stmt = conn.prepare(&format!(
+            "SELECT COUNT(DISTINCT \"{}\") FROM feed_records {};",
+            pri_sanitized, where_clause
+        ))?;
+        let count: u64 = count_stmt.query_row([], |row| row.get(0)).unwrap_or(0);
+        Ok(count)
+    }
+
+    /// Fast native export of complete 3-column breakdown (all pairs: primary_col, secondary_col, job_count)
+    pub fn export_breakdown_pairs(
+        &self,
+        primary_col: &str,
+        secondary_col: &str,
+        export_path: &str,
+        filter_text: Option<String>,
+    ) -> Result<u64> {
+        let cols = self.known_columns.lock().clone();
+        let pri_sanitized = Self::sanitize_column_name(primary_col);
+        let sec_sanitized = Self::sanitize_column_name(secondary_col);
+        let where_clause = Self::build_filter_where_clause(&filter_text, &cols);
         let conn = self.conn.lock();
         let clean_path = export_path.replace('\\', "/").replace('\'', "''");
 
         let copy_sql = format!(
             "COPY (
-                WITH stats AS (
-                    SELECT COUNT(*) as total_count FROM feed_records
-                ),
-                freq AS (
-                    SELECT 
-                        COALESCE(CAST(\"{}\" AS VARCHAR), '[NULL / EMPTY]') as \"{}\",
-                        COUNT(*) as count,
-                        ROUND(COUNT(*) * 100.0 / (SELECT total_count FROM stats), 2) as percentage
-                    FROM feed_records
-                    GROUP BY \"{}\"
-                    ORDER BY count DESC
-                )
-                SELECT * FROM freq
-            ) TO '{}' (HEADER, DELIMITER ',');",
-            sanitized, col_name.replace('"', "\"\""), sanitized, clean_path
+                SELECT 
+                    COALESCE(NULLIF(TRIM(\"{pri}\"), ''), '[Unspecified / None]') as \"{pri_header}\",
+                    COALESCE(NULLIF(TRIM(\"{sec}\"), ''), '[Unspecified / None]') as \"{sec_header}\",
+                    COUNT(*) as job_count
+                FROM feed_records
+                {where_clause}
+                GROUP BY \"{pri}\", \"{sec}\"
+                ORDER BY job_count DESC, \"{pri_header}\" ASC
+            ) TO '{clean_path}' (HEADER, DELIMITER ',');",
+            pri = pri_sanitized,
+            sec = sec_sanitized,
+            pri_header = primary_col.replace('"', "\"\""),
+            sec_header = secondary_col.replace('"', "\"\""),
+            where_clause = where_clause,
+            clean_path = clean_path
         );
+
         conn.execute_batch(&copy_sql)?;
 
-        let mut stmt = conn.prepare(&format!("SELECT COUNT(DISTINCT \"{}\") FROM feed_records;", sanitized))?;
-        let count: u64 = stmt.query_row([], |row| row.get(0)).unwrap_or(0);
+        let mut count_stmt = conn.prepare(&format!(
+            "SELECT COUNT(*) FROM (SELECT 1 FROM feed_records {} GROUP BY \"{}\", \"{}\");",
+            where_clause, pri_sanitized, sec_sanitized
+        ))?;
+        let count: u64 = count_stmt.query_row([], |row| row.get(0)).unwrap_or(0);
         Ok(count)
     }
 

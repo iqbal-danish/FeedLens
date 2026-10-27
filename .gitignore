@@ -51,3 +51,7 @@ desktop.ini
 *.njsproj
 *.sln
 *.sw?
+
+# Exported data files
+*.csv
+*.tsv
