@@ -85,6 +85,7 @@ pub fn run() {
             commands::get_cross_tabulation,
             commands::export_cross_tabulation,
             commands::export_breakdown_pairs,
+            commands::export_custom_columns,
             commands::get_overview_stats,
             commands::get_completeness_matrix,
             commands::get_column_distribution,

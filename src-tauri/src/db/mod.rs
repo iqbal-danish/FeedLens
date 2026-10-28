@@ -5,6 +5,8 @@ use duckdb::Connection;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
+pub mod query_parser;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnCompleteness {
     pub column_name: String,
@@ -397,86 +399,14 @@ impl DuckDbManager {
     /// Helper to build WHERE clause supporting:
     /// - col:val / col=val (e.g. remote:true, company:Balfour, city:London)
     /// - col!=val / -col:val / !col:val
+    /// - comparisons: salary:>80k, salary:<50000, date:>=2026-01-01
+    /// - ranges: salary:50k..100k, date:2026-01-01..2026-06-30
+    /// - boolean logic: AND, OR, NOT, and parentheses (city:Austin OR city:Dallas)
     /// - missing:col / is:empty:col
     /// - populated:col / is:valid:col
-    /// - multi-token combinations (e.g. remote:true name:Balfour)
     /// - free-text global search across columns
     pub fn build_filter_where_clause(filter_text: &Option<String>, cols: &[String]) -> String {
-        if let Some(ref text) = filter_text {
-            let trimmed = text.trim();
-            if trimmed.is_empty() {
-                return String::new();
-            }
-
-            let tokens = Self::tokenize_search_query(trimmed);
-            let mut and_conditions = Vec::new();
-
-            for token in tokens {
-                let trimmed_token = token.trim();
-                if trimmed_token.is_empty() {
-                    continue;
-                }
-
-                if let Some(col_target) = trimmed_token.strip_prefix("missing:").or_else(|| trimmed_token.strip_prefix("is:empty:")) {
-                    let target = col_target.trim();
-                    let actual_col = Self::resolve_column_name(target, cols);
-                    if let Some(c) = actual_col {
-                        and_conditions.push(format!("(\"{}\" IS NULL OR TRIM(\"{}\") = '')", c, c));
-                    }
-                } else if let Some(col_target) = trimmed_token.strip_prefix("populated:").or_else(|| trimmed_token.strip_prefix("is:valid:")) {
-                    let target = col_target.trim();
-                    let actual_col = Self::resolve_column_name(target, cols);
-                    if let Some(c) = actual_col {
-                        and_conditions.push(format!("(\"{}\" IS NOT NULL AND TRIM(\"{}\") != '')", c, c));
-                    }
-                } else if let Some((raw_col, raw_val)) = trimmed_token.split_once(':').or_else(|| trimmed_token.split_once('=')) {
-                    let col_name = raw_col.trim().trim_start_matches('-').trim_start_matches('!');
-                    let is_negated = raw_col.trim().starts_with('-') || raw_col.trim().starts_with('!');
-                    let val = raw_val.trim().trim_matches('"');
-                    let escaped_val = val.replace('\'', "''");
-
-                    if let Some(c) = Self::resolve_column_name(col_name, cols) {
-                        let cond = if val.eq_ignore_ascii_case("true") || val == "1" || val.eq_ignore_ascii_case("yes") {
-                            format!("(LOWER(TRIM(CAST(\"{}\" AS VARCHAR))) IN ('true', '1', 'yes') OR CAST(\"{}\" AS VARCHAR) ILIKE '%true%')", c, c)
-                        } else if val.eq_ignore_ascii_case("false") || val == "0" || val.eq_ignore_ascii_case("no") {
-                            format!("(\"{}\" IS NULL OR LOWER(TRIM(CAST(\"{}\" AS VARCHAR))) IN ('false', '0', 'no', '') OR CAST(\"{}\" AS VARCHAR) ILIKE '%false%')", c, c, c)
-                        } else {
-                            format!("CAST(\"{}\" AS VARCHAR) ILIKE '%{}%'", c, escaped_val)
-                        };
-
-                        if is_negated {
-                            and_conditions.push(format!("NOT ({})", cond));
-                        } else {
-                            and_conditions.push(cond);
-                        }
-                    } else {
-                        // Unmatched column prefix, treat token as free text
-                        let escaped = trimmed_token.replace('\'', "''");
-                        let conditions: Vec<String> = cols
-                            .iter()
-                            .map(|c| format!("CAST(\"{}\" AS VARCHAR) ILIKE '%{}%'", c, escaped))
-                            .collect();
-                        if !conditions.is_empty() {
-                            and_conditions.push(format!("({})", conditions.join(" OR ")));
-                        }
-                    }
-                } else {
-                    let escaped = trimmed_token.replace('\'', "''");
-                    let conditions: Vec<String> = cols
-                        .iter()
-                        .map(|c| format!("CAST(\"{}\" AS VARCHAR) ILIKE '%{}%'", c, escaped))
-                        .collect();
-                    if !conditions.is_empty() {
-                        and_conditions.push(format!("({})", conditions.join(" OR ")));
-                    }
-                }
-            }
-
-            if !and_conditions.is_empty() {
-                return format!("WHERE {}", and_conditions.join(" AND "));
-            }
-        }
-        String::new()
+        query_parser::QueryParser::build_where_clause(filter_text, cols)
     }
 
     /// Ultra-fast completeness matrix calculation (<150ms on millions of rows)
@@ -1068,6 +998,94 @@ impl DuckDbManager {
             where_clause, pri_sanitized, sec_sanitized
         ))?;
         let count: u64 = count_stmt.query_row([], |row| row.get(0)).unwrap_or(0);
+        Ok(count)
+    }
+
+    /// Fast native export of user-selected custom columns (with optional deduplication and filtering)
+    /// Export custom subset of columns to CSV, optionally deduplicating and/or including count & percentage
+    pub fn export_custom_columns(
+        &self,
+        columns: &[String],
+        export_path: &str,
+        deduplicate: bool,
+        include_counts: bool,
+        filter_text: Option<String>,
+    ) -> Result<u64> {
+        if columns.is_empty() {
+            return Ok(0);
+        }
+
+        let all_cols = self.known_columns.lock().clone();
+        let conn = self.conn.lock();
+        let clean_path = export_path.replace('\\', "/").replace('\'', "''");
+        let where_clause = Self::build_filter_where_clause(&filter_text, &all_cols);
+
+        let mut select_parts = Vec::new();
+        let mut group_parts = Vec::new();
+        for col in columns {
+            let sanitized = Self::sanitize_column_name(col);
+            let header = col.replace('"', "\"\"");
+            if include_counts {
+                select_parts.push(format!("COALESCE(CAST(\"{}\" AS VARCHAR), '[NULL / EMPTY]') as \"{}\"", sanitized, header));
+            } else {
+                select_parts.push(format!("\"{}\" as \"{}\"", sanitized, header));
+            }
+            group_parts.push(format!("\"{}\"", sanitized));
+        }
+
+        let copy_sql = if include_counts {
+            let select_cols = select_parts.join(", ");
+            let group_cols = group_parts.join(", ");
+            format!(
+                "COPY (
+                    WITH stats AS (
+                        SELECT COUNT(*) as total_count FROM feed_records {where_clause}
+                    )
+                    SELECT 
+                        {select_cols},
+                        COUNT(*) as count,
+                        ROUND(COUNT(*) * 100.0 / NULLIF((SELECT total_count FROM stats), 0), 2) as percentage
+                    FROM feed_records
+                    {where_clause}
+                    GROUP BY {group_cols}
+                    ORDER BY count DESC
+                ) TO '{clean_path}' (HEADER, DELIMITER ',');"
+            )
+        } else {
+            let distinct_kw = if deduplicate { "DISTINCT " } else { "" };
+            let select_clause = select_parts.join(", ");
+            format!(
+                "COPY (
+                    SELECT {distinct}{select_clause}
+                    FROM feed_records
+                    {where_clause}
+                ) TO '{clean_path}' (HEADER, DELIMITER ',');",
+                distinct = distinct_kw,
+                select_clause = select_clause,
+                where_clause = where_clause,
+                clean_path = clean_path
+            )
+        };
+
+        conn.execute_batch(&copy_sql)?;
+
+        let count_sql = if include_counts {
+            let group_cols = group_parts.join(", ");
+            format!(
+                "SELECT COUNT(*) FROM (SELECT 1 FROM feed_records {where_clause} GROUP BY {group_cols});"
+            )
+        } else {
+            let distinct_kw = if deduplicate { "DISTINCT " } else { "" };
+            let select_clause = select_parts.join(", ");
+            format!(
+                "SELECT COUNT(*) FROM (SELECT {distinct}{select_clause} FROM feed_records {where_clause});",
+                distinct = distinct_kw,
+                select_clause = select_clause,
+                where_clause = where_clause
+            )
+        };
+        let mut stmt = conn.prepare(&count_sql)?;
+        let count: u64 = stmt.query_row([], |row| row.get(0)).unwrap_or(0);
         Ok(count)
     }
 

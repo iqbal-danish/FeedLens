@@ -62,35 +62,42 @@ pub async fn pick_feed_file() -> Result<Option<SelectedFileInfo>, String> {
     if let Some(handle) = file {
         let path = handle.path().to_string_lossy().to_string();
         let filename = handle.file_name();
-        let size_bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
 
-        // Sniff content directly from the file header
-        let sniffed = if let Ok(mut f) = fs::File::open(&path) {
-            let mut buf = [0u8; 2048];
-            let n = f.read(&mut buf).unwrap_or(0);
-            sniff_format_from_bytes(&buf[..n])
-        } else {
-            FeedFormat::Auto
-        };
+        let info = tokio::task::spawn_blocking(move || {
+            let size_bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
 
-        let format = if sniffed != FeedFormat::Auto {
-            sniffed
-        } else {
-            detect_feed_format(&filename)
-        };
+            // Sniff content directly from the file header
+            let sniffed = if let Ok(mut f) = fs::File::open(&path) {
+                let mut buf = [0u8; 2048];
+                let n = f.read(&mut buf).unwrap_or(0);
+                sniff_format_from_bytes(&buf[..n])
+            } else {
+                FeedFormat::Auto
+            };
 
-        let format_desc = match format {
-            FeedFormat::Xml => "XML",
-            FeedFormat::Json => "JSON",
-            FeedFormat::Auto => "Unknown",
-        };
+            let format = if sniffed != FeedFormat::Auto {
+                sniffed
+            } else {
+                detect_feed_format(&filename)
+            };
 
-        Ok(Some(SelectedFileInfo {
-            path,
-            filename,
-            size_bytes,
-            format: format_desc.to_string(),
-        }))
+            let format_desc = match format {
+                FeedFormat::Xml => "XML",
+                FeedFormat::Json => "JSON",
+                FeedFormat::Auto => "Unknown",
+            };
+
+            SelectedFileInfo {
+                path,
+                filename,
+                size_bytes,
+                format: format_desc.to_string(),
+            }
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(Some(info))
     } else {
         Ok(None)
     }
@@ -152,7 +159,7 @@ pub async fn start_ingestion(
     let last_elapsed_ref = state.last_elapsed.clone();
     let skip_descriptions = ingestion_mode.as_deref() != Some("full");
     let batch_size = match ingestion_mode.as_deref() {
-        Some("extreme") => 20_000,
+        Some("extreme") => 10_000,
         Some("fast") => 10_000,
         _ => 5_000,
     };
@@ -503,6 +510,21 @@ pub async fn export_breakdown_pairs(
     state
         .db
         .export_breakdown_pairs(&primary_col, &secondary_col, &export_path, filter_text)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn export_custom_columns(
+    state: State<'_, AppState>,
+    columns: Vec<String>,
+    export_path: String,
+    deduplicate: bool,
+    include_counts: bool,
+    filter_text: Option<String>,
+) -> Result<u64, String> {
+    state
+        .db
+        .export_custom_columns(&columns, &export_path, deduplicate, include_counts, filter_text)
         .map_err(|e| e.to_string())
 }
 

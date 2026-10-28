@@ -1,5 +1,6 @@
 <script lang="ts">
   import { feedState } from "$lib/state.svelte";
+  import { onMount } from "svelte";
   import {
     Search,
     ArrowUpDown,
@@ -15,6 +16,11 @@
     Building2,
     ChevronDown,
     Download,
+    Bookmark,
+    HelpCircle,
+    Plus,
+    Trash2,
+    SlidersHorizontal,
   } from "@lucide/svelte";
 
   let searchInput = $state(feedState.searchFilter);
@@ -27,15 +33,17 @@
   // Column prioritization: Populated first is always turned on by default
   let orderColumnsByFill = $state(true);
 
-  // Unique Column Extraction Modal State
-  let showExportUniqueModal = $state(false);
-  let selectedExportCol = $state<string>("");
+  // Custom Column Extraction Modal State
+  let showExportColumnsModal = $state(false);
+  let selectedExportCols = $state<string[]>([]);
+  let deduplicateExport = $state(true);
+  let includeCountsExport = $state(false);
   let exportColSearchQuery = $state("");
   let applyFilterToExport = $state(true);
 
-  // Auto-initialize selectedExportCol with smart company candidate if not set
+  // Auto-initialize selectedExportCols with smart company candidate if empty
   $effect(() => {
-    if (!selectedExportCol && feedState.tableData?.columns) {
+    if (selectedExportCols.length === 0 && feedState.tableData?.columns) {
       const cols = feedState.tableData.columns;
       const match = cols.find((c) => {
         const low = c.toLowerCase();
@@ -47,7 +55,7 @@
           low === "brand_name"
         );
       });
-      selectedExportCol = match || cols[0] || "";
+      selectedExportCols = match ? [match] : (cols[0] ? [cols[0]] : []);
     }
   });
 
@@ -74,22 +82,253 @@
     return feedState.tableData.columns.filter((c) => c.toLowerCase().includes(q));
   });
 
-  function triggerExportUnique() {
-    if (!selectedExportCol) return;
-    const defaultName = `unique_${selectedExportCol.replace(/[^a-zA-Z0-9_]/g, "_")}_${Date.now()}.csv`;
-    feedState.exportColumnFrequency(selectedExportCol, applyFilterToExport, defaultName);
-    showExportUniqueModal = false;
+  function toggleExportCol(col: string) {
+    if (selectedExportCols.includes(col)) {
+      selectedExportCols = selectedExportCols.filter((c) => c !== col);
+    } else {
+      selectedExportCols = [...selectedExportCols, col];
+    }
+  }
+
+  function selectAllExportCols() {
+    if (feedState.tableData?.columns) {
+      selectedExportCols = [...feedState.tableData.columns];
+    }
+  }
+
+  function clearAllExportCols() {
+    selectedExportCols = [];
+  }
+
+  function triggerExportColumns() {
+    if (selectedExportCols.length === 0) return;
+    feedState.exportCustomColumns(
+      selectedExportCols,
+      deduplicateExport,
+      includeCountsExport,
+      applyFilterToExport
+    );
+    showExportColumnsModal = false;
+  }
+
+  // Autocomplete Suggestions State
+  let searchInputRef = $state<HTMLInputElement>();
+  let isSearchFocused = $state(false);
+  let searchContainerRef = $state<HTMLDivElement>();
+  let selectedSuggestionIndex = $state(0);
+
+  interface SearchSuggestion {
+    type: "column" | "value" | "operator";
+    insertText: string;
+    label: string;
+    badge: string;
+  }
+
+  // Derive the active word currently being typed
+  let activeTokenInfo = $derived(() => {
+    const val = searchInput || "";
+    const lastSpaceIdx = Math.max(val.lastIndexOf(" "), val.lastIndexOf("("));
+    const prefix = lastSpaceIdx >= 0 ? val.slice(0, lastSpaceIdx + 1) : "";
+    const word = lastSpaceIdx >= 0 ? val.slice(lastSpaceIdx + 1) : val;
+
+    if (word.includes(":")) {
+      const colonIdx = word.indexOf(":");
+      const rawCol = word.slice(0, colonIdx);
+      const rawVal = word.slice(colonIdx + 1);
+      return { prefix, word, col: rawCol.trim().toLowerCase(), valPrefix: rawVal || "" };
+    }
+
+    return { prefix, word, col: null, valPrefix: "" };
+  });
+
+  // Generate live autocomplete suggestions based on what the user is typing
+  let searchSuggestions = $derived((): SearchSuggestion[] => {
+    const { word, col, valPrefix } = activeTokenInfo();
+    const suggestions: SearchSuggestion[] = [];
+
+    // Case 1: User typed a column prefix with colon, e.g. "remote:" or "city:New"
+    if (col !== null) {
+      const colLow = col.toLowerCase();
+      // Find matching column info in completeness
+      const matchedCol = feedState.completeness.find(
+        (c) => c.column_name.toLowerCase() === colLow || c.original_name.toLowerCase() === colLow
+      );
+
+      // Boolean shortcut
+      if (colLow === "remote" || colLow.includes("remote") || colLow.includes("is_")) {
+        ["true", "false"].forEach((b) => {
+          if (!valPrefix || b.startsWith(valPrefix.toLowerCase())) {
+            suggestions.push({
+              type: "value",
+              insertText: `${col}:${b}`,
+              label: `${col}:${b}`,
+              badge: "Value",
+            });
+          }
+        });
+      }
+
+      // Salary / numeric shortcut
+      if (colLow.includes("salary") || colLow.includes("pay") || colLow.includes("wage") || colLow.includes("rate")) {
+        [">50k", ">80k", ">100k", "50k..100k", "80k..150k"].forEach((s) => {
+          if (!valPrefix || s.startsWith(valPrefix.toLowerCase())) {
+            suggestions.push({
+              type: "value",
+              insertText: `${col}:${s}`,
+              label: `${col}:${s}`,
+              badge: "Range",
+            });
+          }
+        });
+      }
+
+      // Sample values from the column
+      if (matchedCol && matchedCol.sample_values) {
+        for (const sample of matchedCol.sample_values) {
+          const s = sample.trim();
+          if (!s) continue;
+          if (!valPrefix || s.toLowerCase().includes(valPrefix.toLowerCase())) {
+            const formattedVal = s.includes(" ") ? `"${s}"` : s;
+            suggestions.push({
+              type: "value",
+              insertText: `${col}:${formattedVal}`,
+              label: `${col}:${formattedVal}`,
+              badge: "Top Value",
+            });
+            if (suggestions.length >= 8) break;
+          }
+        }
+      }
+
+      // Missing / Populated shortcuts for this col
+      if (!valPrefix) {
+        suggestions.push({
+          type: "operator",
+          insertText: `missing:${col}`,
+          label: `missing:${col}`,
+          badge: "Empty",
+        });
+        suggestions.push({
+          type: "operator",
+          insertText: `populated:${col}`,
+          label: `populated:${col}`,
+          badge: "Valid",
+        });
+      }
+
+      return suggestions.slice(0, 8);
+    }
+
+    // Case 2: User is typing a column name or just started typing (e.g. "ci", "rem", "sal", or empty)
+    const q = word.toLowerCase().trim();
+
+    // High-priority common columns
+    const priorityCols = ["source_name", "locations_location_city", "remote", "work_model", "salary", "title"];
+
+    // Suggest matching columns
+    const matchedCols = feedState.completeness.filter((c) => {
+      if (!q) return priorityCols.some((p) => c.column_name.toLowerCase().includes(p));
+      return (
+        c.column_name.toLowerCase().includes(q) ||
+        c.original_name.toLowerCase().includes(q)
+      );
+    });
+
+    for (const c of matchedCols.slice(0, 6)) {
+      suggestions.push({
+        type: "column",
+        insertText: `${c.original_name || c.column_name}:`,
+        label: `${c.original_name || c.column_name}:`,
+        badge: `${c.fill_rate.toFixed(0)}% fill`,
+      });
+    }
+
+    // Suggest operators if matching
+    if (q) {
+      if ("and".startsWith(q)) {
+        suggestions.push({ type: "operator", insertText: "AND ", label: "AND", badge: "Operator" });
+      }
+      if ("or".startsWith(q)) {
+        suggestions.push({ type: "operator", insertText: "OR ", label: "OR", badge: "Operator" });
+      }
+      if ("not".startsWith(q)) {
+        suggestions.push({ type: "operator", insertText: "NOT ", label: "NOT", badge: "Operator" });
+      }
+      if ("missing:".startsWith(q)) {
+        suggestions.push({ type: "operator", insertText: "missing:", label: "missing:", badge: "Filter" });
+      }
+      if ("populated:".startsWith(q)) {
+        suggestions.push({ type: "operator", insertText: "populated:", label: "populated:", badge: "Filter" });
+      }
+    }
+
+    return suggestions.slice(0, 8);
+  });
+
+  function selectSuggestion(s: SearchSuggestion) {
+    const { prefix } = activeTokenInfo();
+    searchInput = prefix + s.insertText + (s.type === "value" ? " " : "");
+    setTimeout(() => {
+      searchInputRef?.focus();
+    }, 10);
   }
 
   function handleSearchKeydown(e: KeyboardEvent) {
+    const suggestions = searchSuggestions();
+    if (isSearchFocused && suggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        selectedSuggestionIndex = (selectedSuggestionIndex + 1) % suggestions.length;
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        selectedSuggestionIndex = (selectedSuggestionIndex - 1 + suggestions.length) % suggestions.length;
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        selectSuggestion(suggestions[selectedSuggestionIndex] || suggestions[0]);
+        return;
+      }
+    }
+
     if (e.key === "Enter") {
+      isSearchFocused = false;
       feedState.applySearch(searchInput);
+    } else if (e.key === "Escape") {
+      isSearchFocused = false;
     }
   }
 
   function handleSearchClear() {
     searchInput = "";
     feedState.applySearch("");
+  }
+
+  // Advanced Query Syntax Guide State
+  let showSyntaxGuide = $state(false);
+  let syntaxGuideRef = $state<HTMLDivElement>();
+
+  onMount(() => {
+    const handleGlobalClick = (e: MouseEvent) => {
+      if (showSyntaxGuide && syntaxGuideRef && !syntaxGuideRef.contains(e.target as Node)) {
+        showSyntaxGuide = false;
+      }
+      if (searchContainerRef && !searchContainerRef.contains(e.target as Node)) {
+        isSearchFocused = false;
+      }
+    };
+    window.addEventListener("click", handleGlobalClick);
+    return () => {
+      window.removeEventListener("click", handleGlobalClick);
+    };
+  });
+
+  function applySyntaxExample(query: string) {
+    searchInput = query;
+    feedState.applySearch(query);
+    showSyntaxGuide = false;
   }
 
   // Lookup map of column fill rates from DuckDB completeness analysis
@@ -243,18 +482,60 @@
     <!-- Left Controls: Search Box + Clear Filter Button + Space Saver Toggles -->
     <div class="flex items-center gap-2.5 flex-wrap flex-1">
       <!-- Search Input -->
-      <div class="relative w-72 sm:w-80">
-        <Search class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+      <div class="relative w-72 sm:w-88" bind:this={searchContainerRef}>
+        <Search class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
         <input
+          bind:this={searchInputRef}
           type="text"
           placeholder="Search records... (Press Enter)"
           bind:value={searchInput}
+          onfocus={() => {
+            isSearchFocused = true;
+            selectedSuggestionIndex = 0;
+          }}
           onkeydown={handleSearchKeydown}
           class="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-9 pr-14 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 transition shadow-sm font-sans"
         />
         <span class="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-mono text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700 pointer-events-none">
           ↵
         </span>
+
+        <!-- Autocomplete Suggestions Dropdown -->
+        {#if isSearchFocused && searchSuggestions().length > 0}
+          <div
+            class="absolute top-full left-0 mt-1.5 w-full bg-slate-900/98 border border-slate-700/80 rounded-xl shadow-2xl backdrop-blur-2xl z-50 p-1.5 space-y-0.5 animate-in fade-in duration-100"
+            style="box-shadow: 0 15px 35px -5px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.06);"
+          >
+            <div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+              <span>Suggestions</span>
+              <span class="font-mono text-[9px] text-slate-500">Tab to insert</span>
+            </div>
+            {#each searchSuggestions() as sug, idx}
+              <button
+                type="button"
+                onmousedown={(e) => {
+                  e.preventDefault();
+                  selectSuggestion(sug);
+                }}
+                class="w-full text-left flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono transition cursor-pointer {idx === selectedSuggestionIndex ? 'bg-blue-600/25 border border-blue-500/50 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'}"
+              >
+                <div class="flex items-center gap-2 truncate">
+                  {#if sug.type === 'column'}
+                    <span class="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0"></span>
+                  {:else if sug.type === 'value'}
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+                  {:else}
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+                  {/if}
+                  <span class="truncate font-medium">{sug.label}</span>
+                </div>
+                <span class="text-[10px] font-sans px-1.5 py-0.5 rounded bg-slate-950/60 text-slate-400 border border-slate-800 shrink-0">
+                  {sug.badge}
+                </span>
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
 
       <!-- Filter Button -->
@@ -264,6 +545,101 @@
       >
         Filter
       </button>
+
+      <!-- Advanced Syntax Guide Button & Popover -->
+      <div class="relative" bind:this={syntaxGuideRef}>
+        <button
+          type="button"
+          onclick={() => (showSyntaxGuide = !showSyntaxGuide)}
+          class="px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer border {showSyntaxGuide ? 'bg-cyan-950/70 border-cyan-500/70 text-cyan-200' : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-850'}"
+          title="Advanced query syntax guide (AND, OR, NOT, ranges, dates)"
+        >
+          <Sparkles class="w-3.5 h-3.5 text-cyan-400" />
+          <span>Syntax</span>
+        </button>
+
+        {#if showSyntaxGuide}
+          <div
+            class="absolute left-0 top-full mt-2 w-[440px] max-w-[95vw] bg-slate-900/98 border border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl z-50 p-4 text-xs font-sans animate-in fade-in duration-150 text-slate-200"
+            style="box-shadow: 0 20px 50px -10px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.06);"
+          >
+            <div class="flex items-center justify-between pb-2.5 mb-3 border-b border-slate-800">
+              <div class="flex items-center gap-2">
+                <Sparkles class="w-4 h-4 text-cyan-400" />
+                <h4 class="font-bold text-white text-sm">Advanced Search Syntax</h4>
+              </div>
+              <button onclick={() => (showSyntaxGuide = false)} class="p-1 hover:text-white text-slate-400 cursor-pointer">
+                <X class="w-4 h-4" />
+              </button>
+            </div>
+
+            <div class="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+              <!-- Boolean Logic -->
+              <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+                <span class="block text-[11px] font-bold uppercase tracking-wider text-cyan-400 mb-1">
+                  Boolean AND / OR / NOT &amp; Grouping
+                </span>
+                <div class="space-y-1.5 font-mono text-[11px]">
+                  <div class="flex items-center justify-between group">
+                    <code class="text-slate-300">(city:Austin OR city:Dallas) remote:true</code>
+                    <button onclick={() => applySyntaxExample('(city:Austin OR city:Dallas) remote:true')} class="text-[10px] text-cyan-400 hover:underline cursor-pointer">Try</button>
+                  </div>
+                  <div class="flex items-center justify-between group">
+                    <code class="text-slate-300">company:CVS -city:Chicago</code>
+                    <button onclick={() => applySyntaxExample('company:CVS -city:Chicago')} class="text-[10px] text-cyan-400 hover:underline cursor-pointer">Try</button>
+                  </div>
+                  <div class="flex items-center justify-between group">
+                    <code class="text-slate-300">NOT title:Intern</code>
+                    <button onclick={() => applySyntaxExample('NOT title:Intern')} class="text-[10px] text-cyan-400 hover:underline cursor-pointer">Try</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Numeric & Ranges -->
+              <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+                <span class="block text-[11px] font-bold uppercase tracking-wider text-emerald-400 mb-1">
+                  Numeric &amp; Range Comparisons (&gt;, &lt;, ..)
+                </span>
+                <div class="space-y-1.5 font-mono text-[11px]">
+                  <div class="flex items-center justify-between group">
+                    <code class="text-slate-300">salary:>80k</code>
+                    <button onclick={() => applySyntaxExample('salary:>80k')} class="text-[10px] text-emerald-400 hover:underline cursor-pointer">Try</button>
+                  </div>
+                  <div class="flex items-center justify-between group">
+                    <code class="text-slate-300">salary:50k..100k</code>
+                    <button onclick={() => applySyntaxExample('salary:50k..100k')} class="text-[10px] text-emerald-400 hover:underline cursor-pointer">Try</button>
+                  </div>
+                  <div class="flex items-center justify-between group">
+                    <code class="text-slate-300">date:>2026-01-01</code>
+                    <button onclick={() => applySyntaxExample('date:>2026-01-01')} class="text-[10px] text-emerald-400 hover:underline cursor-pointer">Try</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Presence & Exact Match -->
+              <div class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80">
+                <span class="block text-[11px] font-bold uppercase tracking-wider text-indigo-400 mb-1">
+                  Presence &amp; Exact Match
+                </span>
+                <div class="space-y-1.5 font-mono text-[11px]">
+                  <div class="flex items-center justify-between group">
+                    <code class="text-slate-300">missing:city</code>
+                    <button onclick={() => applySyntaxExample('missing:city')} class="text-[10px] text-indigo-400 hover:underline cursor-pointer">Try</button>
+                  </div>
+                  <div class="flex items-center justify-between group">
+                    <code class="text-slate-300">populated:salary</code>
+                    <button onclick={() => applySyntaxExample('populated:salary')} class="text-[10px] text-indigo-400 hover:underline cursor-pointer">Try</button>
+                  </div>
+                  <div class="flex items-center justify-between group">
+                    <code class="text-slate-300">company:"CVS Health"</code>
+                    <button onclick={() => applySyntaxExample('company:"CVS Health"')} class="text-[10px] text-indigo-400 hover:underline cursor-pointer">Try</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        {/if}
+      </div>
 
       <!-- Active Filter Banner / Clear Filter Button -->
       {#if feedState.searchFilter}
@@ -314,14 +690,14 @@
         <span>Populated First</span>
       </button>
 
-      <!-- Select & Export Unique Column Button -->
+      <!-- Select & Export Custom Columns Button -->
       <button
-        onclick={() => (showExportUniqueModal = true)}
+        onclick={() => (showExportColumnsModal = true)}
         class="px-3 py-2 rounded-xl text-xs font-semibold text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/60 border border-cyan-800/60 transition cursor-pointer flex items-center gap-1.5 shrink-0 shadow-sm"
-        title="Select any company or custom column to export deduplicated values"
+        title="Select one or more columns to export, deduplicate, and filter"
       >
         <Building2 class="w-3.5 h-3.5 text-cyan-400" />
-        <span>Export Unique: <strong class="text-white font-mono">{selectedExportCol || "Company"}</strong></span>
+        <span>Export Columns ({selectedExportCols.length})</span>
         <ChevronDown class="w-3 h-3 text-cyan-400/80" />
       </button>
     </div>
@@ -615,23 +991,23 @@
   </div>
 </div>
 
-<!-- Select Column & Export Unique Values Modal -->
-{#if showExportUniqueModal}
+<!-- Select Columns & Export Custom Dataset Modal -->
+{#if showExportColumnsModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-150">
-    <div class="glass-modal-panel rounded-3xl w-full max-w-lg flex flex-col shadow-2xl overflow-hidden border border-white/15">
+    <div class="glass-modal-panel rounded-3xl w-full max-w-lg flex flex-col shadow-2xl border border-white/15 max-h-[85vh] overflow-hidden">
       <!-- Modal Header -->
       <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
         <div class="flex items-center gap-2.5">
           <div class="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-400/30 flex items-center justify-center">
-            <Building2 class="w-4 h-4 text-cyan-300" />
+            <Download class="w-4 h-4 text-cyan-300" />
           </div>
           <div>
-            <h3 class="text-sm font-bold text-white tracking-tight">Select Column to Extract</h3>
-            <p class="text-[11.5px] text-slate-400">Choose which field to deduplicate and export</p>
+            <h3 class="text-sm font-bold text-white tracking-tight">Export Custom Columns</h3>
+            <p class="text-[11.5px] text-slate-400">Select columns to export, deduplicate, and filter</p>
           </div>
         </div>
         <button
-          onclick={() => (showExportUniqueModal = false)}
+          onclick={() => (showExportColumnsModal = false)}
           class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
           title="Close"
         >
@@ -640,65 +1016,102 @@
       </div>
 
       <!-- Modal Body -->
-      <div class="p-5 space-y-4 max-h-[70vh] overflow-y-auto font-sans">
-        <!-- Quick Suggested Company Chips -->
-        {#if suggestedCompanyCols().length > 0}
-          <div>
-            <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-              Suggested Company Fields in this Feed
+      <div class="p-5 space-y-4 overflow-y-auto font-sans flex-1">
+        <!-- Column Selection Section -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              Columns ({selectedExportCols.length} of {feedState.tableData?.columns.length || 0} selected)
             </label>
-            <div class="flex flex-wrap gap-1.5">
-              {#each suggestedCompanyCols() as sug}
-                <button
-                  type="button"
-                  onclick={() => (selectedExportCol = sug)}
-                  class="px-2.5 py-1 rounded-lg text-xs font-mono transition cursor-pointer border {selectedExportCol === sug
-                    ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 font-bold'
-                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'}"
-                >
-                  {sug}
-                </button>
-              {/each}
+            <div class="flex items-center gap-2 text-xs">
+              <button
+                type="button"
+                onclick={selectAllExportCols}
+                class="text-cyan-400 hover:text-cyan-300 hover:underline cursor-pointer font-medium"
+              >
+                Select All
+              </button>
+              <span class="text-slate-600">|</span>
+              <button
+                type="button"
+                onclick={clearAllExportCols}
+                class="text-slate-400 hover:text-slate-300 hover:underline cursor-pointer font-medium"
+              >
+                Clear All
+              </button>
             </div>
           </div>
-        {/if}
 
-        <!-- Searchable Column Selector -->
-        <div>
-          <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-            All Feed Columns ({feedState.tableData?.columns.length || 0})
-          </label>
           <div class="relative mb-2">
             <Search class="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
-              placeholder="Search columns..."
+              placeholder="Filter columns..."
               bind:value={exportColSearchQuery}
               class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono transition"
             />
           </div>
 
-          <!-- Scrollable Column Picker -->
-          <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl max-h-48 overflow-y-auto divide-y divide-slate-900 font-mono text-xs">
+          <!-- Scrollable Column Picker with Checkboxes -->
+          <div class="bg-slate-950/80 border border-slate-800/80 rounded-xl max-h-56 overflow-y-auto divide-y divide-slate-900 font-mono text-xs">
             {#each modalFilteredCols() as col}
-              {@const isSelected = selectedExportCol === col}
+              {@const isSelected = selectedExportCols.includes(col)}
+              {@const fillRate = columnFillRates().get(col.toLowerCase())}
               <button
                 type="button"
-                onclick={() => (selectedExportCol = col)}
-                class="w-full text-left px-3.5 py-2 flex items-center justify-between transition cursor-pointer {isSelected
-                  ? 'bg-cyan-950/60 text-cyan-200 font-bold'
-                  : 'text-slate-300 hover:bg-slate-900 hover:text-white'}"
+                onclick={() => toggleExportCol(col)}
+                class="w-full text-left px-3.5 py-2 flex items-center justify-between transition cursor-pointer hover:bg-slate-900 {isSelected ? 'bg-cyan-950/40 text-cyan-200' : 'text-slate-300'}"
               >
-                <span>{col}</span>
-                {#if isSelected}
-                  <Check class="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="w-4 h-4 rounded border flex items-center justify-center transition {isSelected ? 'bg-cyan-500 border-cyan-400 text-slate-950' : 'border-slate-700 bg-slate-900'}">
+                    {#if isSelected}
+                      <Check class="w-3 h-3 stroke-[3]" />
+                    {/if}
+                  </div>
+                  <span class="truncate {isSelected ? 'font-semibold' : ''}">{col}</span>
+                </div>
+                {#if fillRate !== undefined}
+                  <span class="text-[10px] font-sans px-1.5 py-0.5 rounded {fillRate > 80 ? 'text-emerald-400 bg-emerald-950/40' : fillRate > 20 ? 'text-amber-400 bg-amber-950/40' : 'text-slate-500 bg-slate-900'}">
+                    {fillRate.toFixed(0)}%
+                  </span>
                 {/if}
               </button>
             {/each}
           </div>
         </div>
 
-        <!-- Filter Scope Toggle -->
+        <!-- Deduplication Toggle Option -->
+        <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+          <div class="space-y-0.5">
+            <span class="text-xs font-semibold text-slate-200">Deduplicate Rows (Unique values only)</span>
+            <p class="text-[11px] text-slate-400">
+              Only outputs unique combinations of the selected columns (runs fast DuckDB SELECT DISTINCT)
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            bind:checked={deduplicateExport}
+            disabled={includeCountsExport}
+            class="w-4 h-4 rounded border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer accent-cyan-500 disabled:opacity-40"
+          />
+        </div>
+
+        <!-- Include Record Count & Percentage Option -->
+        <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+          <div class="space-y-0.5">
+            <span class="text-xs font-semibold text-slate-200">Include Record Count &amp; Percentage</span>
+            <p class="text-[11px] text-slate-400">
+              Adds <code class="text-cyan-300 font-mono text-[10.5px]">count</code> and <code class="text-cyan-300 font-mono text-[10.5px]">percentage</code> columns showing frequency breakdown sorted descending
+            </p>
+          </div>
+          <input
+            type="checkbox"
+            bind:checked={includeCountsExport}
+            class="w-4 h-4 rounded border-slate-700 text-cyan-500 focus:ring-0 cursor-pointer accent-cyan-500"
+          />
+        </div>
+
+        <!-- Filter Scope Toggle Option -->
         {#if feedState.searchFilter}
           <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
             <div class="space-y-0.5">
@@ -719,18 +1132,18 @@
       <!-- Modal Footer -->
       <div class="px-5 py-3.5 bg-slate-950/80 border-t border-white/10 flex items-center justify-between">
         <span class="text-xs text-slate-400 font-sans">
-          Target: <strong class="text-white font-mono">{selectedExportCol || "None"}</strong>
+          Selected: <strong class="text-white font-mono">{selectedExportCols.length}</strong> column{selectedExportCols.length === 1 ? '' : 's'}
         </span>
         <div class="flex items-center gap-2">
           <button
-            onclick={() => (showExportUniqueModal = false)}
+            onclick={() => (showExportColumnsModal = false)}
             class="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
           >
             Cancel
           </button>
           <button
-            onclick={triggerExportUnique}
-            disabled={!selectedExportCol}
+            onclick={triggerExportColumns}
+            disabled={selectedExportCols.length === 0}
             class="px-4 py-1.5 rounded-xl text-xs font-bold text-white bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 transition cursor-pointer shadow-md shadow-cyan-600/20 flex items-center gap-1.5"
           >
             <Download class="w-3.5 h-3.5 text-white" />

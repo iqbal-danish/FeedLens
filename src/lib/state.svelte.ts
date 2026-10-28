@@ -436,6 +436,32 @@ export class FeedLensState {
     }
   }
 
+  async exportCustomColumns(columns: string[], deduplicate = true, includeCounts = false, useFilter = true) {
+    if (!columns || columns.length === 0) {
+      this.showToast("No columns selected for export.");
+      return;
+    }
+    try {
+      const colPrefix = columns.length === 1 ? columns[0].replace(/[^a-zA-Z0-9_]/g, "_") : `custom_${columns.length}_cols`;
+      const countSuffix = includeCounts ? "counts_" : "";
+      const defaultName = `${colPrefix}_${deduplicate || includeCounts ? "unique_" : ""}${countSuffix}${Date.now()}.csv`;
+      const path = await invoke<string | null>("pick_export_file", { defaultName, isJson: false });
+      if (path) {
+        this.showToast(`Exporting ${columns.length} columns to ${path}...`);
+        const count = await invoke<number>("export_custom_columns", {
+          columns,
+          exportPath: path,
+          deduplicate,
+          includeCounts,
+          filterText: useFilter ? (this.searchFilter || null) : null,
+        });
+        this.showToast(`Successfully exported ${count.toLocaleString()} rows to CSV!`);
+      }
+    } catch (e: any) {
+      this.showToast(`Export failed: ${e.message || e}`);
+    }
+  }
+
   async exportData(isJson = false) {
     try {
       const ext = isJson ? "json" : "csv";
