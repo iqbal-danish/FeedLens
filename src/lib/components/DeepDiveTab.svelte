@@ -273,129 +273,133 @@
 
 <div class="p-6 h-full flex flex-col space-y-5 overflow-y-auto w-full">
   <!-- Attribute Selector Header Panel -->
-  <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 p-4 rounded-2xl data-card">
-    <div class="relative flex items-center gap-3" bind:this={dropdownRef}>
-      <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 shrink-0">Select Attribute:</span>
-      
-      <!-- Custom Dropdown Trigger Button -->
-      <div class="relative">
-        <button
-          type="button"
-          onclick={toggleDropdown}
-          class="flex items-center justify-between gap-3 bg-slate-950 hover:bg-slate-900 border border-slate-700/80 hover:border-slate-500 text-white rounded-xl px-3.5 py-2 text-xs font-mono transition-all duration-150 group min-w-[320px] max-w-lg focus:outline-none focus:ring-1 focus:ring-slate-500 cursor-pointer"
-          title={feedState.selectedColumn || "Select attribute..."}
-        >
-          <div class="flex items-center gap-2 truncate flex-1 min-w-0">
-            <span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
-            <span class="font-bold text-slate-100 truncate" title={feedState.selectedColumn}>
-              {feedState.selectedColumn || "Select attribute..."}
-            </span>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            {#if currentColumnInfo()}
-              <span class="px-2 py-0.5 rounded-md text-[11px] font-mono font-medium bg-slate-900 border border-slate-800 text-slate-300">
-                {currentColumnInfo()!.fill_rate.toFixed(0)}% fill
-              </span>
-            {/if}
-            <ChevronDown class="w-4 h-4 text-slate-400 group-hover:text-slate-200 transition-transform duration-200 {isDropdownOpen ? 'rotate-180' : ''}" />
-          </div>
-        </button>
-
-        <!-- Floating Dropdown Menu -->
-        {#if isDropdownOpen}
-          <div
-            class="absolute top-full left-0 mt-2 w-[540px] max-w-[92vw] max-h-[480px] bg-slate-900/98 border border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl z-50 flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150"
-            style="box-shadow: 0 20px 50px -10px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.06);"
+  <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4 p-4 rounded-2xl data-card">
+    <!-- Selectors Group (Primary Attribute + Pivot By) -->
+    <div class="flex flex-wrap items-center gap-3 sm:gap-4 flex-1 min-w-0">
+      <!-- Primary Attribute Selector -->
+      <div class="flex items-center gap-2.5 min-w-0">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 shrink-0">Attribute:</span>
+        
+        <!-- Custom Dropdown Trigger Button -->
+        <div class="relative" bind:this={dropdownRef}>
+          <button
+            type="button"
+            onclick={toggleDropdown}
+            class="flex items-center justify-between gap-2.5 bg-slate-950 hover:bg-slate-900 border border-slate-700/80 hover:border-slate-500 text-white rounded-xl px-3.5 py-2 text-xs font-mono transition-all duration-150 group w-56 sm:w-72 md:w-80 max-w-full focus:outline-none focus:ring-1 focus:ring-slate-500 cursor-pointer"
+            title={feedState.selectedColumn || "Select attribute..."}
           >
-            <!-- Search Bar -->
-            <div class="p-3 border-b border-slate-800 bg-slate-950/80 shrink-0">
-              <div class="relative">
-                <Search class="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
-                <input
-                  bind:this={searchInputRef}
-                  bind:value={searchQuery}
-                  type="text"
-                  placeholder="Search attribute name..."
-                  class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-8 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-slate-600 font-mono transition"
-                />
-                {#if searchQuery}
+            <div class="flex items-center gap-2 truncate flex-1 min-w-0">
+              <span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
+              <span class="font-bold text-slate-100 truncate" title={feedState.selectedColumn}>
+                {feedState.selectedColumn || "Select attribute..."}
+              </span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              {#if currentColumnInfo()}
+                <span class="px-2 py-0.5 rounded-md text-[11px] font-mono font-medium bg-slate-900 border border-slate-800 text-slate-300">
+                  {currentColumnInfo()!.fill_rate.toFixed(0)}% fill
+                </span>
+              {/if}
+              <ChevronDown class="w-4 h-4 text-slate-400 group-hover:text-slate-200 transition-transform duration-200 {isDropdownOpen ? 'rotate-180' : ''}" />
+            </div>
+          </button>
+
+          <!-- Floating Dropdown Menu -->
+          {#if isDropdownOpen}
+            <div
+              class="absolute top-full left-0 mt-2 w-[540px] max-w-[92vw] max-h-[480px] bg-slate-900/98 border border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-2xl z-50 flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150"
+              style="box-shadow: 0 20px 50px -10px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.06);"
+            >
+              <!-- Search Bar -->
+              <div class="p-3 border-b border-slate-800 bg-slate-950/80 shrink-0">
+                <div class="relative">
+                  <Search class="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    bind:this={searchInputRef}
+                    bind:value={searchQuery}
+                    type="text"
+                    placeholder="Search attribute name..."
+                    class="w-full bg-slate-900 border border-slate-800 rounded-xl pl-9 pr-8 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-slate-600 font-mono transition"
+                  />
+                  {#if searchQuery}
+                    <button
+                      type="button"
+                      onclick={() => (searchQuery = "")}
+                      class="absolute right-2.5 top-2 text-slate-500 hover:text-slate-300 p-0.5 rounded transition cursor-pointer"
+                    >
+                      <X class="w-3.5 h-3.5" />
+                    </button>
+                  {/if}
+                </div>
+
+                <!-- Quick Filter Tabs (Clean Matte Buttons) -->
+                <div class="flex items-center gap-1.5 mt-2.5 pt-1">
                   <button
                     type="button"
-                    onclick={() => (searchQuery = "")}
-                    class="absolute right-2.5 top-2 text-slate-500 hover:text-slate-300 p-0.5 rounded transition cursor-pointer"
+                    onclick={() => (filterCategory = "all")}
+                    class="px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition cursor-pointer {filterCategory === 'all' ? 'bg-slate-800 text-white border-slate-600' : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800'}"
                   >
-                    <X class="w-3.5 h-3.5" />
+                    All ({feedState.completeness.length})
                   </button>
+                  <button
+                    type="button"
+                    onclick={() => (filterCategory = "complete")}
+                    class="px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition cursor-pointer {filterCategory === 'complete' ? 'bg-slate-800 text-white border-slate-600' : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800'}"
+                  >
+                    100% Fill ({completeCount})
+                  </button>
+                  <button
+                    type="button"
+                    onclick={() => (filterCategory = "partial")}
+                    class="px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition cursor-pointer {filterCategory === 'partial' ? 'bg-slate-800 text-white border-slate-600' : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800'}"
+                  >
+                    Partial &lt;100% ({partialCount})
+                  </button>
+                </div>
+              </div>
+
+              <!-- Options Scroll List (Matte text, no neon pills) -->
+              <div class="flex-1 overflow-y-auto p-2 space-y-1 max-h-[300px]">
+                {#if filteredColumns().length === 0}
+                  <div class="py-8 text-center text-xs text-slate-500 font-mono">
+                    No attributes matching "{searchQuery}"
+                  </div>
+                {:else}
+                  {#each filteredColumns() as col}
+                    {@const isSelected = col.column_name === feedState.selectedColumn}
+                    <button
+                      type="button"
+                      onclick={() => selectColumn(col.column_name)}
+                      class="w-full text-left flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-xs font-mono transition-colors group cursor-pointer {isSelected ? 'bg-slate-800 text-white font-bold' : 'hover:bg-slate-800/60 text-slate-300'}"
+                      title={col.original_name}
+                    >
+                      <div class="flex items-center gap-2 truncate flex-1 min-w-0" title={col.original_name}>
+                        <span class="w-1.5 h-1.5 rounded-full {isSelected ? 'bg-blue-400' : 'bg-slate-600'} shrink-0"></span>
+                        <span class="truncate {isSelected ? 'text-white' : 'text-slate-200'}">{col.original_name}</span>
+                      </div>
+                      <div class="flex items-center gap-3 shrink-0">
+                        <span class="text-[11px] text-slate-500 font-normal">{col.unique_count.toLocaleString()} unique</span>
+                        <span class="text-[11px] font-mono font-medium {col.fill_rate >= 100 ? 'text-emerald-400' : col.fill_rate >= 60 ? 'text-amber-400' : 'text-rose-400'}">
+                          {col.fill_rate.toFixed(0)}%
+                        </span>
+                      </div>
+                    </button>
+                  {/each}
                 {/if}
               </div>
 
-              <!-- Quick Filter Tabs (Clean Matte Buttons) -->
-              <div class="flex items-center gap-1.5 mt-2.5 pt-1">
-                <button
-                  type="button"
-                  onclick={() => (filterCategory = "all")}
-                  class="px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition cursor-pointer {filterCategory === 'all' ? 'bg-slate-800 text-white border-slate-600' : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800'}"
-                >
-                  All ({feedState.completeness.length})
-                </button>
-                <button
-                  type="button"
-                  onclick={() => (filterCategory = "complete")}
-                  class="px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition cursor-pointer {filterCategory === 'complete' ? 'bg-slate-800 text-white border-slate-600' : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800'}"
-                >
-                  100% Fill ({completeCount})
-                </button>
-                <button
-                  type="button"
-                  onclick={() => (filterCategory = "partial")}
-                  class="px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition cursor-pointer {filterCategory === 'partial' ? 'bg-slate-800 text-white border-slate-600' : 'bg-slate-900/80 text-slate-400 hover:text-slate-200 border-slate-800'}"
-                >
-                  Partial &lt;100% ({partialCount})
-                </button>
+              <!-- Dropdown Footer -->
+              <div class="px-3 py-2 border-t border-slate-800/80 bg-slate-950/80 flex items-center justify-between text-[11px] text-slate-500 font-mono shrink-0">
+                <span>{filteredColumns().length} attributes shown</span>
+                <span>Click to select</span>
               </div>
             </div>
-
-            <!-- Options Scroll List (Matte text, no neon pills) -->
-            <div class="flex-1 overflow-y-auto p-2 space-y-1 max-h-[300px]">
-              {#if filteredColumns().length === 0}
-                <div class="py-8 text-center text-xs text-slate-500 font-mono">
-                  No attributes matching "{searchQuery}"
-                </div>
-              {:else}
-                {#each filteredColumns() as col}
-                  {@const isSelected = col.column_name === feedState.selectedColumn}
-                  <button
-                    type="button"
-                    onclick={() => selectColumn(col.column_name)}
-                    class="w-full text-left flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-xs font-mono transition-colors group cursor-pointer {isSelected ? 'bg-slate-800 text-white font-bold' : 'hover:bg-slate-800/60 text-slate-300'}"
-                    title={col.original_name}
-                  >
-                    <div class="flex items-center gap-2 truncate flex-1 min-w-0" title={col.original_name}>
-                      <span class="w-1.5 h-1.5 rounded-full {isSelected ? 'bg-blue-400' : 'bg-slate-600'} shrink-0"></span>
-                      <span class="truncate {isSelected ? 'text-white' : 'text-slate-200'}">{col.original_name}</span>
-                    </div>
-                    <div class="flex items-center gap-3 shrink-0">
-                      <span class="text-[11px] text-slate-500 font-normal">{col.unique_count.toLocaleString()} unique</span>
-                      <span class="text-[11px] font-mono font-medium {col.fill_rate >= 100 ? 'text-emerald-400' : col.fill_rate >= 60 ? 'text-amber-400' : 'text-rose-400'}">
-                        {col.fill_rate.toFixed(0)}%
-                      </span>
-                    </div>
-                  </button>
-                {/each}
-              {/if}
-            </div>
-
-            <!-- Dropdown Footer -->
-            <div class="px-3 py-2 border-t border-slate-800/80 bg-slate-950/80 flex items-center justify-between text-[11px] text-slate-500 font-mono shrink-0">
-              <span>{filteredColumns().length} attributes shown</span>
-              <span>Click to select</span>
-            </div>
-          </div>
-        {/if}
+          {/if}
+        </div>
       </div>
 
       <!-- Pivot / Segment Selector -->
-      <div class="relative flex items-center gap-2.5 pl-3 border-l border-slate-800" bind:this={pivotDropdownRef}>
+      <div class="flex items-center gap-2.5 sm:pl-3 sm:border-l border-slate-800 min-w-0" bind:this={pivotDropdownRef}>
         <span class="text-xs font-semibold uppercase tracking-wider text-cyan-400 shrink-0 flex items-center gap-1.5">
           <Layers class="w-3.5 h-3.5 text-cyan-400" />
           <span>Pivot By:</span>
@@ -405,7 +409,7 @@
           <button
             type="button"
             onclick={togglePivotDropdown}
-            class="flex items-center justify-between gap-2.5 bg-slate-950 hover:bg-slate-900 border text-white rounded-xl px-3 py-2 text-xs font-mono transition group min-w-[200px] cursor-pointer {feedState.pivotSecondaryCol ? 'border-cyan-500/70 bg-cyan-950/20 text-cyan-200' : 'border-slate-800 text-slate-400'}"
+            class="flex items-center justify-between gap-2.5 bg-slate-950 hover:bg-slate-900 border text-white rounded-xl px-3 py-2 text-xs font-mono transition group w-48 sm:w-56 md:w-60 max-w-full cursor-pointer {feedState.pivotSecondaryCol ? 'border-cyan-500/70 bg-cyan-950/20 text-cyan-200' : 'border-slate-800 text-slate-400'}"
             title={feedState.pivotSecondaryCol || "None (Single Distribution)"}
           >
             <div class="flex items-center gap-2 truncate flex-1 min-w-0">
@@ -488,9 +492,9 @@
 
     <!-- Quick Stats for chosen col (Matte Neutral Badges) -->
     {#if currentColumnInfo()}
-      <div class="flex flex-wrap items-center gap-2 text-xs font-mono">
+      <div class="flex flex-wrap items-center gap-2 text-xs font-mono xl:justify-end shrink-0 pt-2 xl:pt-0 border-t xl:border-t-0 border-slate-800/60 w-full xl:w-auto">
         <!-- Total Count Metric -->
-        <div class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800/80">
+        <div class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800/80 shrink-0">
           <span class="text-slate-400">Total Count:</span>
           <span class="font-bold text-slate-100">
             {currentColumnInfo()!.valid_count.toLocaleString()}
@@ -501,7 +505,7 @@
         </div>
 
         <!-- Distinct Uniques Metric -->
-        <div class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800/80">
+        <div class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800/80 shrink-0">
           <span class="text-slate-400">Distinct Uniques:</span>
           <span class="font-bold text-slate-100">
             {currentColumnInfo()!.unique_count.toLocaleString()}
@@ -509,7 +513,7 @@
         </div>
 
         <!-- Fill Rate Metric -->
-        <div class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800/80">
+        <div class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800/80 shrink-0">
           <span class="text-slate-400">Fill:</span>
           <span class="font-bold text-slate-100">
             {currentColumnInfo()!.fill_rate.toFixed(1)}%
@@ -517,7 +521,7 @@
         </div>
 
         <!-- Uniqueness Ratio -->
-        <div class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800/80">
+        <div class="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800/80 shrink-0">
           <span class="text-slate-400">Uniqueness:</span>
           <span class="font-bold text-slate-100">
             {currentColumnInfo()!.valid_count > 0 ? ((currentColumnInfo()!.unique_count / currentColumnInfo()!.valid_count) * 100).toFixed(1) : 0}%
@@ -530,9 +534,9 @@
   {#if feedState.pivotSecondaryCol}
     <!-- Cross-Tabulation Pivot Matrix View -->
     <div class="p-5 rounded-2xl data-card flex flex-col space-y-4 font-sans">
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
         <div>
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <h3 class="text-sm font-bold text-white tracking-tight flex items-center gap-2">
               <Layers class="w-4 h-4 text-cyan-400" />
               <span>Cross-Tabulation Pivot Matrix</span>
@@ -551,7 +555,7 @@
           </p>
         </div>
 
-        <div class="flex items-center gap-2.5">
+        <div class="flex flex-wrap items-center gap-2.5">
           <!-- Live Table Filter -->
           <div class="relative">
             <Search class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5 pointer-events-none" />
@@ -573,7 +577,7 @@
           </div>
 
           <!-- Export Options -->
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <!-- Export Complete 3-Column Breakdown (Company, City, Count) -->
             <button
               onclick={() => feedState.exportBreakdownPairs(feedState.selectedColumn, feedState.pivotSecondaryCol!)}
