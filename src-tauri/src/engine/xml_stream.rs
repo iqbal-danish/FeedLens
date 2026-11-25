@@ -50,7 +50,6 @@ pub fn is_description_tag(tag: &str) -> bool {
         || lower == "content"
         || lower == "summary"
         || lower == "details"
-        || lower == "post"
         || lower == "job_post"
         || lower == "jobpost"
         || lower.contains("post_body")
@@ -402,20 +401,28 @@ impl<R: BufRead> XmlStreamParser<R> {
                 }
                 Ok(Event::Text(ref e)) => {
                     let text = e.unescape().unwrap_or_default().to_string();
-                    if !text.trim().is_empty() {
-                        if !current_text.is_empty() && !current_text.ends_with(' ') && !current_text.ends_with('\n') {
-                            current_text.push(' ');
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        let in_post = self.skip_descriptions && tag_stack.last().map(|t| t.eq_ignore_ascii_case("post")).unwrap_or(false);
+                        if !in_post || current_text.len() <= 512 {
+                            if !current_text.is_empty() && !current_text.ends_with(' ') && !current_text.ends_with('\n') {
+                                current_text.push(' ');
+                            }
+                            current_text.push_str(trimmed);
                         }
-                        current_text.push_str(text.trim());
                     }
                 }
                 Ok(Event::CData(ref e)) => {
                     let text = String::from_utf8_lossy(e.as_ref()).to_string();
-                    if !text.trim().is_empty() {
-                        if !current_text.is_empty() && !current_text.ends_with(' ') && !current_text.ends_with('\n') {
-                            current_text.push(' ');
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        let in_post = self.skip_descriptions && tag_stack.last().map(|t| t.eq_ignore_ascii_case("post")).unwrap_or(false);
+                        if !in_post || current_text.len() <= 512 {
+                            if !current_text.is_empty() && !current_text.ends_with(' ') && !current_text.ends_with('\n') {
+                                current_text.push(' ');
+                            }
+                            current_text.push_str(trimmed);
                         }
-                        current_text.push_str(text.trim());
                     }
                 }
                 Ok(Event::End(ref e)) => {
@@ -439,13 +446,16 @@ impl<R: BufRead> XmlStreamParser<R> {
 
                     if let Some(pos) = tag_stack.iter().rposition(|x| x.eq_ignore_ascii_case(&end_name)) {
                         let field_key = tag_stack[..=pos].join(".");
-                        if let Some(existing) = fields.get_mut(&field_key) {
-                            if !existing.is_empty() && !current_text.trim().is_empty() {
-                                existing.push_str(", ");
-                                existing.push_str(current_text.trim());
+                        let skip_long_post = self.skip_descriptions && end_name == "post" && current_text.trim().len() > 500;
+                        if !skip_long_post {
+                            if let Some(existing) = fields.get_mut(&field_key) {
+                                if !existing.is_empty() && !current_text.trim().is_empty() {
+                                    existing.push_str(", ");
+                                    existing.push_str(current_text.trim());
+                                }
+                            } else if !current_text.trim().is_empty() {
+                                fields.insert(field_key.clone(), current_text.trim().to_string());
                             }
-                        } else if !current_text.trim().is_empty() {
-                            fields.insert(field_key.clone(), current_text.trim().to_string());
                         }
 
                         // Fast O(1) check: only inspect for key-value pair container when the tag is likely a customfield/item

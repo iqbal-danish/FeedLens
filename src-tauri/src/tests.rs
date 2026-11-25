@@ -400,4 +400,42 @@ mod tests {
             assert_eq!(count, 500, "Should successfully read at least 500 jobs");
         }
     }
+
+    #[test]
+    fn test_smart_post_heuristic() {
+        let long_prose = "A".repeat(600);
+        let xml_data = format!(
+            r#"<jobs>
+                <job>
+                    <id>1</id>
+                    <post>https://api.example.com/apply/1</post>
+                    <description>Huge ignored description</description>
+                </job>
+                <job>
+                    <id>2</id>
+                    <post>
+                        <url>https://api.example.com/apply/2</url>
+                        <method>POST</method>
+                    </post>
+                </job>
+                <job>
+                    <id>3</id>
+                    <post>{}</post>
+                </job>
+            </jobs>"#,
+            long_prose
+        );
+
+        let mut parser = XmlStreamParser::new(Cursor::new(xml_data), "job", true);
+        let rec1 = parser.next_record().unwrap().unwrap();
+        assert_eq!(rec1.fields.get("post").map(|s| s.as_str()), Some("https://api.example.com/apply/1"));
+        assert!(!rec1.fields.contains_key("description"));
+
+        let rec2 = parser.next_record().unwrap().unwrap();
+        assert_eq!(rec2.fields.get("post.url").map(|s| s.as_str()), Some("https://api.example.com/apply/2"));
+        assert_eq!(rec2.fields.get("post.method").map(|s| s.as_str()), Some("POST"));
+
+        let rec3 = parser.next_record().unwrap().unwrap();
+        assert!(!rec3.fields.contains_key("post"), "Long prose > 500 chars inside <post> should be skipped in fast mode");
+    }
 }

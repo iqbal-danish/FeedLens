@@ -181,7 +181,8 @@ pub async fn start_ingestion(
                 if !is_running_ticker.load(Ordering::Relaxed) {
                     break;
                 }
-                let progress = ticker_tracker.snapshot("indexing", "Processing feed records...", None);
+                let phase = ticker_tracker.get_phase();
+                let progress = ticker_tracker.snapshot("indexing", &phase, None);
                 let _ = app_handle_progress.emit("ingest-progress", &progress);
             }
         });
@@ -193,8 +194,7 @@ pub async fn start_ingestion(
                 let (r, cl) = open_streaming_url_reader(&file_path, &tracker_clone)?;
                 (r, cl)
             } else {
-                let r = open_streaming_reader(&file_path, &tracker_clone)?;
-                (r, total_bytes)
+                open_streaming_reader(&file_path, &tracker_clone, total_bytes)?
             };
 
             if stream_total_bytes > 0 {

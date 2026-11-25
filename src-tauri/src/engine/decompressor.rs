@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::Arc;
@@ -9,6 +9,24 @@ use flate2::read::GzDecoder;
 use bzip2::read::BzDecoder;
 
 use super::progress::ProgressReader;
+
+/// Wrapper around an extracted temporary file that automatically removes it from disk when dropped.
+struct TempFileReader {
+    file: File,
+    path: PathBuf,
+}
+
+impl Read for TempFileReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.file.read(buf)
+    }
+}
+
+impl Drop for TempFileReader {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
 
 pub enum CompressionFormat {
     None,
@@ -37,7 +55,8 @@ pub fn detect_compression_format<P: AsRef<Path>>(path: P) -> CompressionFormat {
 pub fn open_streaming_reader<P: AsRef<Path>>(
     path: P,
     tracker: &super::progress::ProgressTracker,
-) -> Result<Box<dyn Read + Send>> {
+    default_total_bytes: u64,
+) -> Result<(Box<dyn Read + Send>, u64)> {
     let path = path.as_ref();
     let file = File::open(path).with_context(|| format!("Failed to open file: {:?}", path))?;
     let progress_file = ProgressReader::new(file, tracker.bytes_read.clone(), tracker.cancel_flag.clone());
@@ -46,14 +65,14 @@ pub fn open_streaming_reader<P: AsRef<Path>>(
     let format = detect_compression_format(path);
 
     match format {
-        CompressionFormat::None => Ok(Box::new(buffered)),
+        CompressionFormat::None => Ok((Box::new(buffered), default_total_bytes)),
         CompressionFormat::Gzip => {
             let decoder = GzDecoder::new(buffered);
-            Ok(Box::new(BufReader::with_capacity(1024 * 1024 * 2, decoder)))
+            Ok((Box::new(BufReader::with_capacity(1024 * 1024 * 2, decoder)), default_total_bytes))
         }
         CompressionFormat::Bzip2 => {
             let decoder = BzDecoder::new(buffered);
-            Ok(Box::new(BufReader::with_capacity(1024 * 1024 * 2, decoder)))
+            Ok((Box::new(BufReader::with_capacity(1024 * 1024 * 2, decoder)), default_total_bytes))
         }
         CompressionFormat::Zip => {
             let raw_file = File::open(path)?;
@@ -73,7 +92,9 @@ pub fn open_streaming_reader<P: AsRef<Path>>(
                 }
             }
 
-            let mut zip_entry = archive.by_index(best_index)?;
+            let zip_entry = archive.by_index(best_index)?;
+            let uncompressed_size = zip_entry.size();
+
             let mut temp_path = std::env::temp_dir();
             let sanitized_name = zip_entry.name().replace(['/', '\\'], "_");
             temp_path.push(format!("feedlens_extracted_{}_{}", std::process::id(), sanitized_name));
@@ -85,13 +106,38 @@ pub fn open_streaming_reader<P: AsRef<Path>>(
                 .truncate(true)
                 .open(&temp_path)?;
 
-            io::copy(&mut zip_entry, &mut temp_file)?;
+            // Report real-time extraction progress against uncompressed entry size
+            if uncompressed_size > 0 {
+                tracker.total_bytes.store(uncompressed_size, Ordering::Relaxed);
+            }
+            tracker.bytes_read.store(0, Ordering::Relaxed);
+            tracker.set_phase("Extracting ZIP archive...");
+
+            {
+                let mut progress_zip = ProgressReader::new(
+                    zip_entry,
+                    tracker.bytes_read.clone(),
+                    tracker.cancel_flag.clone(),
+                );
+                io::copy(&mut progress_zip, &mut temp_file)?;
+            }
+
             temp_file.seek(SeekFrom::Start(0))?;
 
-            let progress_entry = ProgressReader::new(temp_file, tracker.bytes_read.clone(), tracker.cancel_flag.clone());
-            Ok(Box::new(BufReader::with_capacity(1024 * 1024 * 2, progress_entry)))
+            // Reset bytes_read so the indexing phase cleanly tracks 0% -> 100% of uncompressed bytes
+            tracker.bytes_read.store(0, Ordering::Relaxed);
+            tracker.set_phase("Processing feed records...");
+
+            let temp_reader = TempFileReader {
+                file: temp_file,
+                path: temp_path,
+            };
+            let progress_entry = ProgressReader::new(temp_reader, tracker.bytes_read.clone(), tracker.cancel_flag.clone());
+            let effective_total = if uncompressed_size > 0 { uncompressed_size } else { default_total_bytes };
+            Ok((Box::new(BufReader::with_capacity(1024 * 1024 * 2, progress_entry)), effective_total))
         }
         CompressionFormat::TarGz => {
+            tracker.set_phase("Extracting tar.gz archive...");
             let gz_decoder = GzDecoder::new(buffered);
             let mut archive = tar::Archive::new(gz_decoder);
             let entries = archive.entries()?;
@@ -102,7 +148,15 @@ pub fn open_streaming_reader<P: AsRef<Path>>(
                     if path_str.ends_with(".xml") || path_str.ends_with(".json") || path_str.ends_with(".jsonl") {
                         let mut buffer = Vec::new();
                         entry.read_to_end(&mut buffer)?;
-                        return Ok(Box::new(io::Cursor::new(buffer)));
+                        let len = buffer.len() as u64;
+                        tracker.bytes_read.store(0, Ordering::Relaxed);
+                        tracker.set_phase("Processing feed records...");
+                        let progress_cursor = ProgressReader::new(
+                            io::Cursor::new(buffer),
+                            tracker.bytes_read.clone(),
+                            tracker.cancel_flag.clone(),
+                        );
+                        return Ok((Box::new(progress_cursor), len));
                     }
                 }
             }

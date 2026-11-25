@@ -2,6 +2,7 @@ use std::io::{self, Read};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -24,6 +25,7 @@ pub struct ProgressTracker {
     pub records_ingested: Arc<AtomicU64>,
     pub total_bytes: Arc<AtomicU64>,
     pub cancel_flag: Arc<AtomicBool>,
+    pub current_phase: Arc<Mutex<String>>,
     pub start_time: Instant,
 }
 
@@ -35,8 +37,17 @@ impl ProgressTracker {
             records_ingested: Arc::new(AtomicU64::new(0)),
             total_bytes: Arc::new(AtomicU64::new(total_bytes)),
             cancel_flag,
+            current_phase: Arc::new(Mutex::new("Processing feed records...".to_string())),
             start_time: now,
         }
+    }
+
+    pub fn set_phase(&self, phase: &str) {
+        *self.current_phase.lock() = phase.to_string();
+    }
+
+    pub fn get_phase(&self) -> String {
+        self.current_phase.lock().clone()
     }
 
     pub fn is_cancelled(&self) -> bool {
